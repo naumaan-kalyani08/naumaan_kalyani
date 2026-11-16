@@ -72,6 +72,9 @@ function IntroStage({ children }) {
       const state = {
         reveal: 0, glow: 0, orbit: 0, dolly: 0, lid: 0, screen: 0, align: 0, push: 0, out: 0,
         win: 1, cursorIn: 0, cursor: 0, click: 0,
+        // dock launch: cursor → "nk" icon (cursorA), click (clickA), icon
+        // bounce, window zooms out of the icon (launch, overshoots = pop)
+        cursorA: 0, clickA: 0, bounce: 0, launch: 0,
       };
       const win = windowRef.current;
       const cursor = cursorRef.current;
@@ -82,6 +85,8 @@ function IntroStage({ children }) {
       let geo = null; // windowed geometry (hero-box px), from layoutWindow
       let lastWin = -1;
       let lastCursor = "";
+      let lastHop = -1;
+      const dockIcon = screen.querySelector(".intro__desk-dock .dock__item .dock__lift");
       let scene = null;
       let done = false;
       let disabled = false;
@@ -172,7 +177,8 @@ function IntroStage({ children }) {
           lastGlare = glareOpacity;
           glare.style.opacity = glareOpacity;
         }
-        if (lum > 0.25) revealHero();
+        // The hero's entrance plays once its window has popped open.
+        if (lum > 0.25 && state.launch > 0.3) revealHero();
       };
 
       // ---- Scroll choreography (one scrubbed timeline, reversible) ----
@@ -183,11 +189,18 @@ function IntroStage({ children }) {
         .to(state, { dolly: 1, duration: 0.37, ease: "power2.inOut" }, 0.25)
         .to(state, { lid: 1.05, duration: 0.25, ease: "power3.inOut" }, 0.3)
         .to(state, { lid: 1, duration: 0.07, ease: "sine.out" }, 0.55)
-        .to(state, { screen: 1, duration: 0.1 }, 0.58)
+        .to(state, { screen: 1, duration: 0.06 }, 0.58)
         .to(state, { align: 1, duration: 0.22, ease: "power2.inOut" }, 0.58)
-        // the site in a browser tab → the cursor clicks "full screen" →
-        .to(state, { cursorIn: 1, duration: 0.03 }, 0.68)
-        .to(state, { cursor: 1, duration: 0.08, ease: "power2.inOut" }, 0.69)
+        // the desktop wakes → the cursor clicks the "nk" app in the dock →
+        // it bounces and the browser window zooms out of it (macOS launch) →
+        .to(state, { cursorIn: 1, duration: 0.02 }, 0.6)
+        .to(state, { cursorA: 1, duration: 0.04, ease: "power2.inOut" }, 0.6)
+        .to(state, { clickA: 1, duration: 0.006, ease: "power1.out" }, 0.642)
+        .to(state, { clickA: 0, duration: 0.01, ease: "power1.in" }, 0.648)
+        .to(state, { bounce: 1, duration: 0.05 }, 0.645)
+        .to(state, { launch: 1, duration: 0.07, ease: "back.out(1.5)" }, 0.655)
+        // → the site in a browser tab → the cursor clicks "full screen" →
+        .to(state, { cursor: 1, duration: 0.05, ease: "power2.inOut" }, 0.725)
         .to(state, { click: 1, duration: 0.012, ease: "power1.out" }, 0.775)
         .to(state, { click: 0, duration: 0.018, ease: "power1.in" }, 0.787)
         .to(state, { win: 0, duration: 0.1, ease: "power3.inOut" }, 0.79)
@@ -291,7 +304,27 @@ function IntroStage({ children }) {
         const green = chrome.querySelector(".intro__light--max");
         const gx = green.offsetLeft + green.offsetWidth / 2;
         const gy = green.offsetTop + green.offsetHeight / 2;
-        geo = { s, a: x0, b: y0 + c, c, gx, gy, start: { x: x0 + W * s * 0.62, y: y0 + (H + c) * s * 0.6 } };
+        // The "nk" app icon in the desktop dock (offsets up to the screen box,
+        // unaffected by the screen's matrix3d).
+        const icon = deskDock.querySelector(".dock__item");
+        let ix = icon.offsetWidth / 2;
+        let iy = icon.offsetHeight / 2;
+        for (let el = icon; el && el !== screen; el = el.offsetParent) {
+          ix += el.offsetLeft;
+          iy += el.offsetTop;
+        }
+        geo = {
+          s,
+          a: x0,
+          b: y0 + c,
+          c,
+          W,
+          H,
+          gx,
+          gy,
+          icon: { x: ix, y: iy, size: icon.offsetWidth },
+          start: { x: clip.left + dw * 0.55, y: clip.top + dh * 0.42 },
+        };
         lastWin = -1;
         lastCursor = "";
       };
@@ -299,13 +332,28 @@ function IntroStage({ children }) {
       const applyWindow = () => {
         if (!geo) return;
         const k = Math.round(state.win * 1000) / 1000;
-        const s = 1 + (geo.s - 1) * k;
-        const a = geo.a * k;
-        const b = geo.b * k;
-        if (k !== lastWin) {
-          lastWin = k;
+        const L = Math.round(state.launch * 1000) / 1000;
+        // Launch: the window's rect grows out of the dock icon into its spot
+        // on the desktop; the back-ease overshoot (L > 1) is a brief pop.
+        const lc = Math.min(1, L);
+        const iconS = geo.icon.size / geo.W;
+        const winCx = geo.a + (geo.W * geo.s) / 2;
+        const winCy = geo.b - geo.c + ((geo.H + geo.c) * geo.s) / 2;
+        const cx = lerp(geo.icon.x, winCx, lc);
+        const cy = lerp(geo.icon.y, winCy, lc);
+        const baseS = lerp(iconS, geo.s, lc) * (1 + Math.max(0, L - 1) * 0.6);
+        const baseA = cx - (geo.W * baseS) / 2;
+        const baseB = cy - ((geo.H + geo.c) * baseS) / 2 + geo.c;
+        // Full screen (k → 0) blends that rect to the identity.
+        const s = 1 + (baseS - 1) * k;
+        const a = baseA * k;
+        const b = baseB * k;
+        const key = `${k}|${L}`;
+        if (key !== lastWin) {
+          lastWin = key;
           win.style.transform = k > 0 ? `translate3d(${a.toFixed(2)}px, ${b.toFixed(2)}px, 0) scale(${s.toFixed(5)})` : "none";
           win.style.borderRadius = k > 0 ? `${((14 * k) / s).toFixed(2)}px` : "";
+          win.style.opacity = k > 0 ? Math.min(1, L / 0.22).toFixed(3) : "";
           // Full screen hides the menu bar and the dock (the dock exists only
           // on this desktop — the site itself has none).
           const hide = 1 - k;
@@ -317,10 +365,19 @@ function IntroStage({ children }) {
         const vis = Math.round(state.cursorIn * 100) / 100;
         let value = "hidden";
         if (vis > 0) {
-          const t = smooth(state.cursor);
-          const x = lerp(geo.start.x, a + s * geo.gx, t);
-          const y = lerp(geo.start.y, -geo.c + b + s * geo.gy, t);
-          value = `${x.toFixed(1)},${y.toFixed(1)},${(1 - state.click * 0.18).toFixed(3)},${vis}`;
+          const t1 = smooth(state.cursorA);
+          const t2 = smooth(state.cursor);
+          const x = lerp(lerp(geo.start.x, geo.icon.x, t1), a + s * geo.gx, t2);
+          const y = lerp(lerp(geo.start.y, geo.icon.y - geo.icon.size * 0.1, t1), -geo.c + b + s * geo.gy, t2);
+          const press = Math.max(state.click, state.clickA);
+          value = `${x.toFixed(1)},${y.toFixed(1)},${(1 - press * 0.18).toFixed(3)},${vis}`;
+        }
+        // The launched icon hops twice (the second hop lower), like the Dock.
+        const hop = state.bounce > 0 && state.bounce < 1 ? Math.abs(Math.sin(state.bounce * Math.PI * 2)) * (state.bounce < 0.5 ? 1 : 0.5) : 0;
+        const hopKey = Math.round(hop * 100);
+        if (hopKey !== lastHop) {
+          lastHop = hopKey;
+          dockIcon.style.transform = hop ? `translate3d(0, ${(-hop * geo.icon.size * 0.55).toFixed(1)}px, 0)` : "";
         }
         if (value === lastCursor) return;
         lastCursor = value;
@@ -336,6 +393,9 @@ function IntroStage({ children }) {
       function resetWindow() {
         win.style.transform = "";
         win.style.borderRadius = "";
+        win.style.opacity = "";
+        dockIcon.style.transform = "";
+        lastHop = -1;
         cursor.style.opacity = "0";
         lastWin = -1;
         lastCursor = "";
@@ -442,7 +502,7 @@ function IntroStage({ children }) {
             </span>
           </div>
           <div className="intro__desk-dock">
-            <Dock />
+            <Dock launcher />
           </div>
         </div>
 

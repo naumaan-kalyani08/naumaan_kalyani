@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  AdditiveBlending,
   Box3,
   BoxGeometry,
   CanvasTexture,
@@ -26,6 +27,7 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import modelUrl from "../assets/models/macbook.glb?url";
 import { createBase, lerp } from "./base";
+import { createDeskSetup, MAT_TOP } from "./deskSetup";
 
 /*
  * "Laptop on a desk" intro scene.
@@ -55,7 +57,7 @@ const TAN_HALF_FOV = Math.tan(MathUtils.degToRad(FOV / 2));
 const THEMES = {
   dark: {
     bg: "#05070f",
-    desk: "#2a2f4a",
+    desk: "#ffffff",
     shell: "#80838c",
     keys: "#15161b",
     hemiSky: "#a9b4ff",
@@ -73,7 +75,7 @@ const THEMES = {
   },
   light: {
     bg: "#f4f3ef",
-    desk: "#ebe7dd",
+    desk: "#ffffff",
     shell: "#c9cbd1",
     keys: "#16171b",
     hemiSky: "#ffffff",
@@ -330,7 +332,7 @@ function quadToMatrix3d(q, w, h) {
   return `matrix3d(${A},${D},0,${G},${B},${E},0,${H},0,0,1,0,${x0},${y0},0,1)`;
 }
 
-export function createScene(container, { isMobile }) {
+export function createScene(container, { isMobile, reduced = false }) {
   const base = createBase(container, { isMobile, fov: FOV, z: 6 });
   const { renderer, scene, camera } = base;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -356,37 +358,39 @@ export function createScene(container, { isMobile }) {
   scene.background = new Color(THEMES.dark.bg);
   scene.fog = new Fog(THEMES.dark.bg, 5, 15);
 
-  // ---- Desk: a lit "pool" that fades into the page colour (no horizon) ----
+  // ---- Workspace: wooden desk (baked light pool) + back wall + props ----
+  // All static and baked (see deskSetup.js): no extra lights, no shadow maps.
   // toneMapped: false keeps fully-fogged pixels identical to the CSS --bg.
-  // Dark: a spotlight pool. Light: an almost flat, daylight-lit surface.
-  const poolTexture = (stops) =>
-    track(
-      canvasTexture(256, 256, (ctx, w, h) => {
-        const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
-        stops.forEach(([at, color]) => g.addColorStop(at, color));
-        ctx.fillStyle = g;
-        ctx.fillRect(0, 0, w, h);
-      })
-    );
-  const pools = {
-    dark: poolTexture([
-      [0, "#ffffff"],
-      [0.3, "#9a9a9a"],
-      [1, "#303030"],
-    ]),
-    light: poolTexture([
-      [0, "#ffffff"],
-      [0.4, "#f7f7f7"],
-      [1, "#ededed"],
-    ]),
-  };
-  const desk = new Mesh(
-    new PlaneGeometry(24, 24),
-    new MeshBasicMaterial({ color: THEMES.dark.desk, map: pools.dark, toneMapped: false })
-  );
+  // The top ends at a rounded front edge (EDGE_Z); UVs keep the full
+  // DESK square's mapping so the baked light pool stays put.
+  const DESK = { size: 24, centerZ: -0.6 };
+  const EDGE_Z = isMobile ? 7 : 3.0; // phones frame more desk: keep the edge out of view
+  const zFar = DESK.centerZ - DESK.size / 2;
+  const deskGeometry = new PlaneGeometry(DESK.size, EDGE_Z - zFar);
+  const deskUV = deskGeometry.attributes.uv;
+  for (let i = 0; i < deskUV.count; i += 1) deskUV.setY(i, 1 - (1 - deskUV.getY(i)) * ((EDGE_Z - zFar) / DESK.size));
+  const desk = new Mesh(deskGeometry, new MeshBasicMaterial({ color: THEMES.dark.desk, toneMapped: false }));
   desk.rotation.x = -Math.PI / 2;
-  desk.position.set(0, 0, -0.6);
+  desk.position.set(0, 0, (zFar + EDGE_Z) / 2);
   scene.add(desk);
+  // Desktop: a varnish layer drawn additively over the baked wood — black
+  // albedo, so it only adds reflections (lights + environment) with the grain
+  // as a bump, fading out away from the laptop. Phones skip it.
+  const sheen = isMobile
+    ? null
+    : new Mesh(
+        deskGeometry,
+        new MeshStandardMaterial({ color: 0x000000, metalness: 0, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false, fog: false })
+      );
+  if (sheen) {
+    sheen.rotation.copy(desk.rotation);
+    sheen.position.copy(desk.position);
+    sheen.renderOrder = 0.5;
+    scene.add(sheen);
+  }
+  let dirty = true; // see update(): unchanged frames are not re-rendered
+  const workspace = createDeskSetup({ isMobile, reduced, renderer, edgeZ: EDGE_Z, onChange: () => (dirty = true) });
+  scene.add(workspace.group);
 
   // ---- Contact shadow (baked, two layers: soft spread + tight core) ----
   const shadowMaterial = (texture, opacity) =>
@@ -395,7 +399,7 @@ export function createScene(container, { isMobile }) {
   const coreShadow = new Mesh(new PlaneGeometry(4.6, 3.45), shadowMaterial(track(shadowTexture(6, 176, 118)), 0.7));
   [softShadow, coreShadow].forEach((mesh, i) => {
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.y = 0.002 + i * 0.001;
+    mesh.position.y = MAT_TOP + 0.002 + i * 0.001; // on the desk mat
     mesh.renderOrder = 1;
     scene.add(mesh);
   });
@@ -412,6 +416,7 @@ export function createScene(container, { isMobile }) {
   // ---- Laptop ----
   const laptop = new Group();
   laptop.scale.setScalar(SCALE);
+  laptop.position.y = MAT_TOP; // sits on the felt desk mat
   scene.add(laptop);
 
   const panelMaterial = new MeshBasicMaterial({ color: SCREEN_OFF.clone(), toneMapped: false });
@@ -525,7 +530,7 @@ export function createScene(container, { isMobile }) {
 
     // P0 — establishing shot (closed lid), orbit drifts while scrolling.
     // (portrait: a shallower ¾ angle so the near corner isn't clipped)
-    const r0 = Math.max(6.2, fitWidth(portrait ? 4.3 : 3.9)) * (1 + (1 - s.reveal) * 0.18);
+    const r0 = Math.max(portrait ? 6.2 : 6.9, fitWidth(portrait ? 4.3 : 3.9)) * (1 + (1 - s.reveal) * 0.18);
     const azimuth = portrait ? lerp(22, 12, s.orbit) : lerp(34, 20, s.orbit);
     spherical(p0, t0, r0, azimuth - (1 - s.reveal) * 6, portrait ? 34 : 22);
 
@@ -546,11 +551,11 @@ export function createScene(container, { isMobile }) {
     camera.lookAt(target);
     camera.updateMatrixWorld();
 
-    // Fog follows the framing: the laptop stays clear, the desk dissolves
-    // into the page colour behind it (portrait cameras sit much further back).
+    // Fog follows the framing: the workspace stays clear and only far
+    // surfaces haze toward the page colour (the wall itself fades at its edges).
     const distance = pos.distanceTo(target);
-    scene.fog.near = distance - 1.2;
-    scene.fog.far = distance + 9;
+    scene.fog.near = distance + 1.8;
+    scene.fog.far = distance + 16;
   };
 
   // Project the content rect → CSS px quad → matrix3d (null if not drawable).
@@ -689,7 +694,8 @@ export function createScene(container, { isMobile }) {
     scene.background.set(t.bg);
     scene.fog.color.set(t.bg);
     desk.material.color.set(t.desk);
-    desk.material.map = t === THEMES.light ? pools.light : pools.dark;
+    workspace.applyTheme(t === THEMES.light ? "light" : "dark", desk.material, DESK, sheen?.material);
+    dirty = true;
     softShadow.material.opacity = t.shadow * 0.7;
     coreShadow.material.opacity = t.shadow;
     hemi.color.set(t.hemiSky);
@@ -708,20 +714,74 @@ export function createScene(container, { isMobile }) {
 
   const resize = (width, height) => {
     base.resize(width, height);
+    dirty = true;
     vw = width;
     vh = height;
   };
 
+  // Opt-in perf readout (?introStats): draw calls, triangles, GPU resources
+  // and the JS cost of update(), for comparing scene changes.
+  const stats = typeof location !== "undefined" && /[?&]introStats(&|$)/.test(location.search) ? { ms: 0, n: 0 } : null;
+  if (stats) {
+    window.__introStats = () => ({
+      calls: renderer.info.render.calls,
+      triangles: renderer.info.render.triangles,
+      textures: renderer.info.memory.textures,
+      geometries: renderer.info.memory.geometries,
+      programs: renderer.info.programs?.length,
+      updateMs: +(stats.ms / Math.max(1, stats.n)).toFixed(3),
+    });
+  }
+
   const update = (time, dt) => {
+    const t0 = stats ? performance.now() : 0;
+    updateFrame(time, dt);
+    if (stats) {
+      stats.ms += performance.now() - t0;
+      stats.n += 1;
+    }
+  };
+
+  // Frame signature: camera matrix + all scrubbed phase values. When nothing
+  // moved (scroll idle, pointer settled) the frame is skipped entirely: no
+  // GPU work and no DOM writes. Anything else that changes the picture sets
+  // `dirty` (theme, resize, texture loads, screen box).
+  const signature = new Float64Array(48);
+  let signatureKeys = Object.keys(state);
+  const frameChanged = () => {
+    let changed = false;
+    let i = 0;
+    const e = camera.matrixWorld.elements;
+    for (; i < 16; i += 1) {
+      if (signature[i] !== e[i]) {
+        signature[i] = e[i];
+        changed = true;
+      }
+    }
+    for (const key of signatureKeys) {
+      const value = state[key] ?? 0;
+      if (signature[i] !== value) {
+        signature[i] = value;
+        changed = true;
+      }
+      i += 1;
+    }
+    return changed;
+  };
+
+  const updateFrame = (time, dt) => {
     if (!active || !lid) {
       if (!lid) renderer.render(scene, camera);
       return;
     }
     const k = 1 - Math.pow(0.002, dt || 0.016);
-    pointer.x = lerp(pointer.x, pointer.tx, k);
-    pointer.y = lerp(pointer.y, pointer.ty, k);
+    pointer.x = Math.abs(pointer.tx - pointer.x) < 1e-4 ? pointer.tx : lerp(pointer.x, pointer.tx, k);
+    pointer.y = Math.abs(pointer.ty - pointer.y) < 1e-4 ? pointer.ty : lerp(pointer.y, pointer.ty, k);
 
     placeCamera();
+    if (workspace.tick(time, state)) dirty = true;
+    if (!frameChanged() && !dirty) return;
+    dirty = false;
 
     const lum = screenLuminance(state.screen);
     panelMaterial.color.copy(SCREEN_OFF).lerp(panelOn, lum);
@@ -755,6 +815,8 @@ export function createScene(container, { isMobile }) {
     bind: (nextState, frameCallback) => {
       state = nextState;
       onFrame = frameCallback;
+      signatureKeys = Object.keys(state).slice(0, 32);
+      dirty = true;
     },
     /** Size of the DOM element mapped onto the screen (CSS px). */
     setScreenBox: (width, height) => {
@@ -762,6 +824,7 @@ export function createScene(container, { isMobile }) {
       boxW = width;
       boxH = height;
       fitContent();
+      dirty = true;
     },
     /** The notch in DOM-box px ({ left, width, height }), for the overlay. */
     getNotch: () => {
@@ -786,10 +849,12 @@ export function createScene(container, { isMobile }) {
     /** false → stop rendering (the intro is finished and hidden). */
     setActive: (value) => {
       active = value;
+      dirty = true;
     },
     dispose: () => {
       onFrame = null;
       textures.forEach((texture) => texture.dispose());
+      workspace.dispose();
       scene.traverse((obj) => obj.material?.map?.dispose?.()); // key legends
       envTarget.dispose();
       shellMaterial?.normalMap?.dispose();

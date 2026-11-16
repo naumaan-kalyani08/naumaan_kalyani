@@ -5,6 +5,7 @@ import { ScrambleTextPlugin } from "gsap/ScrambleTextPlugin";
 import { projects, skillGroups, skillLevels } from "../data/content";
 import { prefersReducedMotion } from "../lib/scroll";
 import RevealHeading from "./RevealHeading";
+import { SkillIcon } from "../data/skillIcons";
 import "../style/Skills.css";
 
 gsap.registerPlugin(ScrambleTextPlugin);
@@ -210,6 +211,7 @@ export default function Skills() {
                       <span className="el__num">{pad(el.number)}</span>
                       <LevelDots level={el.level} className="el__level" />
                       <span className="el__symbol">{el.symbol}</span>
+                      <SkillIcon name={el.name} className="el__logo" />
                       <span className="el__name">{el.name}</span>
                       <span className="el__since">{shortYear(el.since)}</span>
                     </button>
@@ -236,6 +238,7 @@ export default function Skills() {
                 <span className="el__num">{pad(active.number)}</span>
                 <LevelDots level={active.level} className="el__level" />
                 <span className="inspector__symbol">{active.symbol}</span>
+                <SkillIcon name={active.name} className="el__logo" />
                 <span className="el__name">{active.name}</span>
                 <span className="el__since">{shortYear(active.since)}</span>
               </div>

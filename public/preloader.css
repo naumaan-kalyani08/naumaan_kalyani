@@ -1,0 +1,97 @@
+/* Critical CSS for the static preloader in index.html. Loaded as a plain
+   file (public/) so it styles the very first frame before any JS runs — in
+   dev, Vite only injects the app CSS after the JS. Mirrors
+   src/style/Preloader.css with the design tokens inlined. */
+html,
+body {
+  margin: 0;
+  background: #05070f;
+}
+:root[data-theme="light"],
+:root[data-theme="light"] body {
+  background: #f4f3ef;
+}
+.preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
+.preloader__panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: clamp(24px, 4vw, 48px) clamp(20px, 5vw, 64px);
+  background: #07091a;
+  color: #fff;
+  font-family: "Inter", system-ui, sans-serif;
+}
+:root[data-theme="light"] .preloader__panel {
+  background: #e9e7e0;
+  color: #0d0f1e;
+}
+.preloader__top,
+.preloader__bottom {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.preloader__top {
+  align-items: center;
+}
+.preloader__brand {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+.preloader__brand sup {
+  color: #6366f1;
+  font-size: 12px;
+}
+.preloader__mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.preloader__bar {
+  position: relative;
+  flex: 1;
+  height: 1px;
+  margin-bottom: 0.9em;
+  background: rgb(255 255 255 / 0.12);
+  font-size: clamp(72px, 16vw, 220px);
+}
+:root[data-theme="light"] .preloader__bar {
+  background: rgb(13 15 30 / 0.12);
+}
+.preloader__fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, #6366f1, #5fd6f6);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+}
+.preloader__count {
+  display: inline-flex;
+  align-items: flex-start;
+  font-family: "Archivo Black", system-ui, sans-serif;
+  font-size: clamp(72px, 16vw, 220px);
+  line-height: 0.85;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+  padding-right: 0.06em; /* the mask must not clip the % sign */
+}
+.preloader__pct {
+  margin-left: 0.06em;
+  font-size: 0.32em;
+  color: #5fd6f6;
+}
+@media (max-width: 768px) {
+  .preloader__bar {
+    margin-bottom: 0.6em;
+  }
+}

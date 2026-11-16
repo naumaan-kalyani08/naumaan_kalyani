@@ -1,0 +1,275 @@
+/* ==========================================================================
+   Contact form — intro column + glass card form with floating labels,
+   chip pickers and inline validation.
+   ========================================================================== */
+
+.cform-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(28px, 5vw, 72px);
+  align-items: start;
+  margin-top: clamp(56px, 8vw, 110px);
+}
+
+.cform__intro {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.cform__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3.6vw, 52px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.cform__lede {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.cform__points {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.cform__points li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cform__points li::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18'%3E%3Cpath d='m5 9.2 2.6 2.6L13 6.4' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+      center / 100% no-repeat,
+    var(--gradient);
+}
+
+/* ---------- Card ---------- */
+.cform {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+  padding: clamp(22px, 3vw, 36px);
+  border: 1px solid var(--border-strong);
+  border-radius: 28px;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgb(99 102 241 / 0.14), transparent 60%),
+    linear-gradient(160deg, var(--card-1), var(--card-2));
+  box-shadow: 0 40px 80px -40px rgb(var(--shadow-rgb) / calc(0.8 * var(--shadow-k)));
+}
+
+.cform__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+/* ---------- Floating-label fields ---------- */
+.cform__field {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cform__input {
+  width: 100%;
+  min-width: 0;
+  height: 58px;
+  padding: 24px 16px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: rgb(var(--ink) / 0.03);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* ≥16px: no zoom-on-focus on iOS */
+  outline: none;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+
+.cform__textarea {
+  height: auto;
+  min-height: 150px;
+  padding-top: 28px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.cform__label {
+  position: absolute;
+  top: 19px;
+  left: 17px;
+  color: var(--muted);
+  font-size: 15px;
+  pointer-events: none;
+  transform-origin: 0 0;
+  transition: transform 0.25s var(--ease-out), color 0.25s ease;
+}
+
+.cform__input:focus,
+.cform__input:hover {
+  border-color: var(--accent-2);
+  background: rgb(var(--ink) / 0.05);
+}
+
+.cform__input:focus {
+  box-shadow: 0 0 0 4px rgb(95 214 246 / 0.15);
+}
+
+.cform__input:focus + .cform__label,
+.cform__input:not(:placeholder-shown) + .cform__label {
+  color: var(--accent-text);
+  transform: translateY(-11px) scale(0.78);
+}
+
+.cform__input[aria-invalid="true"] {
+  border-color: #f87171;
+}
+
+.cform__input[aria-invalid="true"] + .cform__label {
+  color: #f87171;
+}
+
+.cform__error {
+  color: #f87171;
+  font-size: 13px;
+}
+
+/* ---------- Chip pickers ---------- */
+.cform__chips {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cform__legend {
+  margin-bottom: 10px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.cform__chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cform__chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.25s var(--ease-out);
+}
+
+.cform__chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cform__chip:hover {
+  border-color: var(--accent-2);
+}
+
+.cform__chip.is-on {
+  border-color: transparent;
+  background: var(--gradient);
+  color: #fff;
+}
+
+.cform__chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 3px;
+}
+
+.cform__chip:active {
+  transform: scale(0.96);
+}
+
+/* ---------- Footer ---------- */
+.cform__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 22px;
+}
+
+.cform__submit[disabled] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.cform__status {
+  flex: 1 1 220px;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.cform__status--sent {
+  color: #4ade80;
+}
+
+.cform__status--error {
+  color: #f87171;
+}
+
+.cform__hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .cform-wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .cform__row {
+    grid-template-columns: 1fr;
+  }
+  .cform__submit {
+    width: 100%;
+  }
+}

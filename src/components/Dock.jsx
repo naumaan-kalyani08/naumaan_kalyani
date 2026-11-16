@@ -90,7 +90,40 @@ function AppIcon({ id }) {
   );
 }
 
-export default function Dock() {
+// A Chrome-style browser icon (drawn, not an asset): the laptop intro's
+// desktop launches the portfolio from it.
+function BrowserIcon() {
+  const sector = (start, color) => {
+    const r = 21;
+    const a0 = ((start - 90) * Math.PI) / 180;
+    const a1 = ((start + 30) * Math.PI) / 180;
+    return (
+      <path
+        d={`M30 30 L${30 + r * Math.cos(a0)} ${30 + r * Math.sin(a0)} A${r} ${r} 0 0 1 ${30 + r * Math.cos(a1)} ${30 + r * Math.sin(a1)} Z`}
+        fill={color}
+      />
+    );
+  };
+  return (
+    <svg className="dock__icon" viewBox="0 0 60 60" aria-hidden="true" focusable="false">
+      <rect x="2" y="2" width="56" height="56" rx="13.5" fill="#f5f6f8" />
+      <rect x="2" y="2" width="56" height="56" rx="13.5" fill="url(#dock-s-browser)" />
+      <defs>
+        <linearGradient id="dock-s-browser" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff" stopOpacity="0.5" />
+          <stop offset="1" stopColor="#000" stopOpacity="0.06" />
+        </linearGradient>
+      </defs>
+      {sector(-30, "#ea4335")}
+      {sector(90, "#fbbc04")}
+      {sector(210, "#34a853")}
+      <circle cx="30" cy="30" r="9.5" fill="#fff" />
+      <circle cx="30" cy="30" r="7.2" fill="#4285f4" />
+    </svg>
+  );
+}
+
+export default function Dock({ launcher = false }) {
   const listRef = useRef(null);
   const centers = useRef([]);
 
@@ -153,13 +186,26 @@ export default function Dock() {
           <AppIcon id={app.key} />
         </span>
       </a>
-      {app.key === "home" && <span className="dock__running" aria-hidden="true" />}
+      {app.key === (launcher ? "browser" : "home") && <span className="dock__running" aria-hidden="true" />}
     </li>
   );
 
   return (
     <nav className="dock" aria-label="Quick navigation">
       <ul className="dock__shelf" ref={listRef} onPointerEnter={onEnter} onPointerMove={onMove} onPointerLeave={onLeave}>
+        {launcher && (
+          <li className="dock__item dock__item--browser">
+            <span className="dock__link" aria-label="Chrome">
+              <span className="dock__tip" aria-hidden="true">
+                Chrome
+              </span>
+              <span className="dock__lift">
+                <BrowserIcon />
+              </span>
+            </span>
+            <span className="dock__running" aria-hidden="true" />
+          </li>
+        )}
         {APPS.map(renderItem)}
         {SOCIALS.length > 0 && <li className="dock__divider" aria-hidden="true" />}
         {SOCIALS.map(renderItem)}

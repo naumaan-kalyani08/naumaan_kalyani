@@ -60,15 +60,24 @@ export default function HorizontalScroll() {
       const resetSkew = () => skewTo(0);
       ScrollTrigger.addEventListener("scrollEnd", resetSkew);
 
-      // Outline → filled sweep as each word crosses the middle of the screen.
-      words.forEach((word) => {
+      // Outline → filled sweep while each word travels across the screen. It
+      // completes while the word is still fully visible; the last word ends
+      // exactly when the strip stops (its right edge meets the viewport edge).
+      words.forEach((word, i) => {
+        const last = i === words.length - 1;
         gsap.fromTo(
           word,
           { backgroundPosition: "100% 0" },
           {
             backgroundPosition: "0% 0",
             ease: "none",
-            scrollTrigger: { trigger: word, containerAnimation: tween, start: "left 80%", end: "right 50%", scrub: true },
+            scrollTrigger: {
+              trigger: word,
+              containerAnimation: tween,
+              start: "left 92%",
+              end: last ? "right 100%" : "right 80%",
+              scrub: true,
+            },
           }
         );
       });

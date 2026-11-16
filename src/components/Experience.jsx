@@ -289,7 +289,7 @@ export default function Experience() {
         nodeEls[i].classList.toggle("is-active", on);
 
         if (on) {
-          timelines[i].timeScale(1).play();
+          timelines[i].timeScale(desktop ? 1 : 1.8).play();
           if (withFx) {
             ripple(i);
             decode(i);
@@ -586,16 +586,19 @@ export default function Experience() {
         return undefined;
       }
 
-      // The comet's y follows the viewport's 55% line, with a soft scrub.
+      // The comet's y follows a line across the viewport with a soft scrub:
+      // 55% on desktop; on phones 85% and a shorter lag, so each card opens as
+      // it enters the screen rather than after a quick flick has passed it.
+      const line = () => (window.matchMedia(DESKTOP_QUERY).matches ? "55%" : "85%");
       gsap.to(state, {
         y: () => stage.clientHeight,
         ease: "none",
         onUpdate: render,
         scrollTrigger: {
           trigger: stage,
-          start: "top 55%",
-          end: "bottom 55%",
-          scrub: 0.7,
+          start: () => `top ${line()}`,
+          end: () => `bottom ${line()}`,
+          scrub: desktop ? 0.7 : 0.25,
           invalidateOnRefresh: true,
         },
       });

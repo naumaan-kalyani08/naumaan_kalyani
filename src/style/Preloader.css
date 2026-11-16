@@ -128,6 +128,7 @@
   line-height: 0.85;
   letter-spacing: -0.06em;
   font-variant-numeric: tabular-nums;
+  padding-right: 0.06em; /* the mask must not clip the % sign */
 }
 
 .preloader__pct {

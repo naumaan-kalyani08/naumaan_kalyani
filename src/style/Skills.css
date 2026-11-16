@@ -172,7 +172,7 @@
   grid-template-rows: auto 1fr auto;
   grid-template-areas:
     "num level"
-    "symbol symbol"
+    "symbol logo"
     "name since";
   gap: 4px;
   min-height: 122px;
@@ -287,6 +287,55 @@
   letter-spacing: -0.04em;
 }
 
+/* ---------- Logos (src/data/skillIcons.jsx) ---------- */
+.el__logo {
+  grid-area: logo;
+  align-self: center;
+  justify-self: end;
+  width: clamp(22px, 2vw, 30px);
+  height: clamp(22px, 2vw, 30px);
+  transition: transform 0.45s var(--ease-out), filter 0.45s var(--ease-out);
+}
+
+.skill-icon--brand {
+  fill: var(--brand);
+}
+
+.skill-icon--brand.skill-icon--ink {
+  fill: var(--text);
+}
+
+.skill-icon--brand.skill-icon--lift {
+  filter: brightness(1.45) saturate(1.15);
+}
+
+.skill-icon--glyph {
+  color: rgb(var(--g));
+}
+
+@media (hover: hover) {
+  .el:hover .el__logo {
+    transform: scale(1.12) rotate(-6deg);
+    filter: drop-shadow(0 6px 12px rgb(var(--g) / 0.45));
+  }
+}
+
+/* On a filled tile (and the inspector card) logos turn white */
+.el.is-active .skill-icon--brand,
+.inspector__card .skill-icon--brand {
+  fill: #fff;
+}
+
+.el.is-active .skill-icon--glyph,
+.inspector__card .skill-icon--glyph {
+  color: #fff;
+}
+
+.inspector__card .el__logo {
+  width: clamp(28px, 2.6vw, 38px);
+  height: clamp(28px, 2.6vw, 38px);
+}
+
 .el__name {
   grid-area: name;
   min-width: 0;
@@ -399,7 +448,7 @@
   grid-template-rows: auto 1fr auto;
   grid-template-areas:
     "num level"
-    "symbol symbol"
+    "symbol logo"
     "name since";
   gap: 2px;
   aspect-ratio: 1;

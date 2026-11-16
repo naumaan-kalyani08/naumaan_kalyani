@@ -4,6 +4,7 @@ import useThreeScene from "../three/useThreeScene";
 import { profile, socials } from "../data/content";
 import { isFinePointer, prefersReducedMotion, scrollToTarget } from "../lib/scroll";
 import RevealHeading from "./RevealHeading";
+import ContactForm from "./ContactForm";
 import "../style/Contact.css";
 
 const loadContactScene = () => import("../three/contactScene.js");
@@ -117,6 +118,8 @@ export default function Contact() {
             </span>
           </div>
         </div>
+
+        <ContactForm />
       </div>
 
       <div className="toast" ref={toastRef} role="status" aria-live="polite">
