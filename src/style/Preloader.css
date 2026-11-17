@@ -125,10 +125,40 @@
   align-items: flex-start;
   font-family: var(--font-display);
   font-size: clamp(72px, 16vw, 220px);
-  line-height: 0.85;
-  letter-spacing: -0.06em;
+  line-height: 1;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
   padding-right: 0.06em; /* the mask must not clip the % sign */
+}
+
+/* Odometer columns (same rolling-strip idea as the journey HUD's year) */
+.preloader__col {
+  display: block;
+  max-width: 0.9em;
+  height: 1em;
+  overflow: hidden;
+  transition: max-width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Leading zero: the column folds away (0 → 10 → 100) */
+.preloader__col.is-off {
+  max-width: 0;
+}
+
+.preloader__strip {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+
+.preloader__strip span {
+  display: block;
+  height: 1em;
+  text-align: center;
+  background: linear-gradient(180deg, var(--text) 35%, var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .preloader__pct {

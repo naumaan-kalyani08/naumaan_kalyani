@@ -57,10 +57,10 @@ export const aboutText = [
 ];
 
 export const aboutImages = [
-  { src: "./Images/flat-creativity-concept-illustration.webp", alt: "Creative concept illustration" },
-  { src: "./Images/image2.webp", alt: "Workspace snapshot" },
-  { src: "./Images/image3.webp", alt: "Design exploration" },
-  { src: "./Images/image4.webp", alt: "Project detail" },
+  { src: "./Images/avatar-pic.jpg", alt: "Design exploration" },
+  { src: "./Images/hero-1.jpg", alt: "NK" },
+  { src: "./Images/avatar-2.jpeg", alt: "NK 1" },
+  { src: "./Images/avatar-3.jpeg", alt: "Project detail" },
 ];
 
 export const stats = [
@@ -117,7 +117,6 @@ export const projects = [
     title: "GSA Connect",
     category: "Full stack · Client: Adani",
     year: "2025",
-    image: "./Images/image2.webp",
     tags: ["React", "FastAPI", "PostgreSQL", "Bootstrap"],
     role: "Full stack developer",
     description:
@@ -133,7 +132,6 @@ export const projects = [
     title: "Accounting With AI",
     category: "Full stack · Fintech",
     year: "2025",
-    image: "./Images/image4.webp",
     tags: ["React", "Laravel", "MySQL", "Bootstrap"],
     role: "Full stack developer",
     description:
@@ -145,7 +143,6 @@ export const projects = [
     title: "Parts Consignment",
     category: "Full stack · Supply chain",
     year: "2024",
-    image: "./Images/image5.webp",
     tags: ["React", "Laravel", "MySQL", "Bootstrap"],
     role: "Developer",
     description:
@@ -157,7 +154,6 @@ export const projects = [
     title: "Family Fun Events",
     category: "Full stack · Event management",
     year: "2025",
-    image: "./Images/image3.webp",
     tags: ["React", "FastAPI", "PostgreSQL", "Tailwind CSS"],
     role: "Full stack developer",
     description:
@@ -169,7 +165,6 @@ export const projects = [
     title: "Planiteasy",
     category: "Full stack · Travel",
     year: "2025",
-    image: "./Images/flat-creativity-concept-illustration.webp",
     tags: ["Vue.js", "Laravel", "MySQL", "Bootstrap"],
     role: "Full stack developer",
     description:

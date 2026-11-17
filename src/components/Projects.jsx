@@ -21,7 +21,7 @@ export default function Projects() {
       if (prefersReducedMotion()) return undefined;
 
       gsap.utils.toArray(".project").forEach((card) => {
-        const media = card.querySelector(".project__media");
+        const media = card.querySelector(".project__media, .project__panel");
         const img = card.querySelector(".project__img");
 
         // Clip-path wipe reveal as the card enters.
@@ -36,7 +36,7 @@ export default function Projects() {
         );
 
         // Inner image parallax.
-        gsap.fromTo(
+        if (img) gsap.fromTo(
           img,
           { yPercent: -8, scale: 1.18 },
           {
@@ -102,7 +102,8 @@ export default function Projects() {
     const link = event.currentTarget;
     gsap.killTweensOf(link);
     gsap.set(link, { rotationX: 0, rotationY: 0 });
-    if (!prefersReducedMotion()) openState.current = Flip.getState(link.querySelector(".project__media"));
+    const media = link.querySelector(".project__media");
+    if (media && !prefersReducedMotion()) openState.current = Flip.getState(media);
     setOpenIndex(index);
   };
 
@@ -124,7 +125,10 @@ export default function Projects() {
 
       <div className="projects__grid">
         {projects.map((project, index) => (
-          <article className={`project ${openIndex === index ? "is-open" : ""}`} key={project.slug}>
+          <article
+            className={`project ${project.image ? "" : "project--text"} ${openIndex === index ? "is-open" : ""}`}
+            key={project.slug}
+          >
             <a
               className="project__link"
               href={`#${project.slug}`}
@@ -132,33 +136,11 @@ export default function Projects() {
               aria-haspopup="dialog"
               onClick={(event) => openCase(event, index)}
             >
-              <div className="project__media" data-flip-id={project.slug}>
-                <img
-                  className="project__img"
-                  src={project.image}
-                  alt={`${project.title} preview`}
-                  width="1200"
-                  height="1200"
-                  loading="lazy"
-                  decoding="async"
-                />
-                <span className="project__num">{String(index + 1).padStart(2, "0")}</span>
-                <span className="project__open" aria-hidden="true">
-                  Case study ↗
-                </span>
-              </div>
-              <div className="project__info">
-                <div>
-                  <h3 className="project__title">{project.title}</h3>
-                  <p className="project__category">{project.category}</p>
-                </div>
-                <span className="project__year">{project.year}</span>
-              </div>
-              <ul className="project__tags" aria-label="Technologies">
-                {project.tags.map((tag) => (
-                  <li key={tag}>{tag}</li>
-                ))}
-              </ul>
+              {project.image ? (
+                <ImageCard project={project} index={index} />
+              ) : (
+                <TextCard project={project} index={index} />
+              )}
             </a>
           </article>
         ))}
@@ -173,5 +155,64 @@ export default function Projects() {
         />
       )}
     </section>
+  );
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+
+const Tags = ({ tags }) => (
+  <ul className="project__tags" aria-label="Technologies">
+    {tags.map((tag) => (
+      <li key={tag}>{tag}</li>
+    ))}
+  </ul>
+);
+
+// Description-only card, used while a project has no `image`.
+function TextCard({ project, index }) {
+  return (
+    <div className="project__panel">
+      <div className="project__panel-top">
+        <span className="project__num">{pad(index + 1)}</span>
+        <span className="project__year">{project.year}</span>
+      </div>
+      <h3 className="project__title">{project.title}</h3>
+      <p className="project__category">{project.category}</p>
+      <p className="project__desc">{project.description}</p>
+      <Tags tags={project.tags} />
+      <span className="project__more">
+        Case study <span aria-hidden="true">↗</span>
+      </span>
+    </div>
+  );
+}
+
+function ImageCard({ project, index }) {
+  return (
+    <>
+      <div className="project__media" data-flip-id={project.slug}>
+        <img
+          className="project__img"
+          src={project.image}
+          alt={`${project.title} preview`}
+          width="1200"
+          height="1200"
+          loading="lazy"
+          decoding="async"
+        />
+        <span className="project__num">{pad(index + 1)}</span>
+        <span className="project__open" aria-hidden="true">
+          Case study ↗
+        </span>
+      </div>
+      <div className="project__info">
+        <div>
+          <h3 className="project__title">{project.title}</h3>
+          <p className="project__category">{project.category}</p>
+        </div>
+        <span className="project__year">{project.year}</span>
+      </div>
+      <Tags tags={project.tags} />
+    </>
   );
 }

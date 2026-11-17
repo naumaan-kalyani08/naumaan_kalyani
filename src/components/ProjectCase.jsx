@@ -30,12 +30,13 @@ export default function ProjectCase({ index, flipState, onClose, onNext }) {
       if (reduced) return;
       gsap.from(".case__bar", { y: -20, autoAlpha: 0, duration: 0.7, ease: "power3.out", delay: 0.4 });
 
-      if (flipState.current) {
-        Flip.from(flipState.current, { targets: root.querySelector(".case__media"), duration: 1, ease: "expo.inOut" });
-        flipState.current = null;
-      } else {
-        gsap.from(".case__media", { autoAlpha: 0, y: 60, duration: 0.8, ease: "power3.out" });
+      const media = root.querySelector(".case__media");
+      if (media && flipState.current) {
+        Flip.from(flipState.current, { targets: media, duration: 1, ease: "expo.inOut" });
+      } else if (media) {
+        gsap.from(media, { autoAlpha: 0, y: 60, duration: 0.8, ease: "power3.out" });
       }
+      flipState.current = null;
       gsap.from(".case__anim", { y: 40, autoAlpha: 0, duration: 0.9, ease: "power3.out", stagger: 0.06, delay: 0.5 });
       gsap.from(".case__title-word", { yPercent: 110, duration: 1, ease: "power4.out", stagger: 0.06, delay: 0.55 });
     }, root);
@@ -70,7 +71,8 @@ export default function ProjectCase({ index, flipState, onClose, onNext }) {
     if (prefersReducedMotion()) return;
     const root = rootRef.current;
     const ctx = gsap.context(() => {
-      gsap.fromTo(".case__media img", { scale: 1.25, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 1.1, ease: "expo.out" });
+      const img = root.querySelector(".case__media img");
+      if (img) gsap.fromTo(img, { scale: 1.25, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 1.1, ease: "expo.out" });
       gsap.fromTo(".case__anim", { y: 40, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.8, ease: "power3.out", stagger: 0.05 });
       gsap.fromTo(".case__title-word", { yPercent: 110 }, { yPercent: 0, duration: 1, ease: "power4.out", stagger: 0.06 });
     }, root);
@@ -86,7 +88,12 @@ export default function ProjectCase({ index, flipState, onClose, onNext }) {
       return;
     }
     gsap
-      .timeline({ onComplete: () => onClose(Flip.getState(root.querySelector(".case__media"))) })
+      .timeline({
+        onComplete: () => {
+          const media = root.querySelector(".case__media");
+          onClose(media ? Flip.getState(media) : null);
+        },
+      })
       .to(root.querySelectorAll(".case__bar, .case__anim, .case__title"), { y: 24, autoAlpha: 0, duration: 0.3, ease: "power2.in", stagger: 0.015 })
       .to(root.querySelector(".case__backdrop"), { autoAlpha: 0, duration: 0.4, ease: "power2.in" }, 0.05);
   };
@@ -95,10 +102,11 @@ export default function ProjectCase({ index, flipState, onClose, onNext }) {
     if (busy.current) return;
     busy.current = true;
     const root = rootRef.current;
-    gsap
+    const tl = gsap
       .timeline({ onComplete: onNext })
-      .to(root.querySelectorAll(".case__anim, .case__title-word"), { y: -30, autoAlpha: 0, duration: 0.35, ease: "power2.in", stagger: 0.01 })
-      .to(root.querySelector(".case__media img"), { scale: 1.1, autoAlpha: 0, duration: 0.4, ease: "power2.in" }, 0);
+      .to(root.querySelectorAll(".case__anim, .case__title-word"), { y: -30, autoAlpha: 0, duration: 0.35, ease: "power2.in", stagger: 0.01 });
+    const img = root.querySelector(".case__media img");
+    if (img) tl.to(img, { scale: 1.1, autoAlpha: 0, duration: 0.4, ease: "power2.in" }, 0);
   };
 
   const closeRef = useRef(close);
@@ -135,9 +143,11 @@ export default function ProjectCase({ index, flipState, onClose, onNext }) {
           </button>
         </div>
 
-        <div className="case__media" data-flip-id={project.slug}>
-          <img src={project.image} alt={`${project.title} preview`} width="1200" height="1200" decoding="async" />
-        </div>
+        {project.image && (
+          <div className="case__media" data-flip-id={project.slug}>
+            <img src={project.image} alt={`${project.title} preview`} width="1200" height="1200" decoding="async" />
+          </div>
+        )}
 
         <div className="case__body">
           <p className="case__eyebrow case__anim">{project.category}</p>

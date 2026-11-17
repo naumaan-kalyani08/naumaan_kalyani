@@ -14,6 +14,31 @@ const CURVE_BULGE = "M0,0 L1000,0 L1000,0 Q500,160 0,0 Z";
 
 // Each task is capped: a slow font CDN must never hold the site hostage
 // (text simply swaps in when the webfont arrives).
+// Odometer: three digit columns (hundreds, tens, ones). Each strip holds 0–9
+// plus a trailing 0, so a column can roll 9 → 0 without jumping back.
+const COLUMNS = 3;
+const STRIP = Array.from({ length: 11 }, (_, n) => n % 10);
+
+// Digits rest on whole numbers and only flick over in the last part of each
+// step — so a pause in loading never leaves a digit stuck halfway.
+const ROLL = 0.35; // share of each step spent rolling
+const settle = (value) => {
+  const base = Math.floor(value);
+  const t = Math.min(1, Math.max(0, (value - base - (1 - ROLL)) / ROLL));
+  return base + t * t * (3 - 2 * t); // smoothstep
+};
+
+// Mechanical carry: a column only turns while every column to its right is
+// rolling over its last digit (…098 → 099 → 100), like a real counter.
+const odometer = (value) => {
+  const ones = value % 10;
+  return [
+    Math.floor(value / 100) + Math.max(0, (value % 100) - 99),
+    Math.floor(value / 10) - Math.floor(value / 100) * 10 + Math.max(0, ones - 9),
+    ones,
+  ];
+};
+
 const capped = (promise, ms) =>
   Promise.race([Promise.resolve(promise).catch(() => null), new Promise((resolve) => setTimeout(resolve, ms))]);
 
@@ -41,7 +66,8 @@ export default function Preloader() {
     if (done) return undefined;
     const root = rootRef.current;
     const q = (selector) => root.querySelector(selector);
-    const num = q(".preloader__num");
+    const cols = [...root.querySelectorAll(".preloader__col")];
+    const strips = cols.map((col) => col.querySelector(".preloader__strip"));
     const fill = q(".preloader__fill");
     const html = document.documentElement;
     html.classList.add("is-locked");
@@ -84,14 +110,20 @@ export default function Preloader() {
       const tasks = loadTasks();
 
       const render = () => {
-        const value = Math.round(progress.value);
-        num.textContent = value;
+        const value = Math.min(100, progress.value);
+        const digits = odometer(settle(value));
+        let leading = true; // no leading zeros: 0 → 10 → 100
+        digits.forEach((d, c) => {
+          leading = leading && d === 0 && c < COLUMNS - 1;
+          cols[c].classList.toggle("is-off", leading);
+          strips[c].style.transform = `translateY(${(-d).toFixed(3)}em)`;
+        });
         fill.style.transform = `scaleX(${value / 100})`;
       };
 
       const advance = () => {
         gsap.to(progress, {
-          value: target * 100,
+          value: Math.round(target * 100), // always come to rest on a whole number
           duration: target >= 1 ? 0.9 : 1.2,
           ease: "power2.out",
           overwrite: true,
@@ -112,6 +144,18 @@ export default function Preloader() {
         })
       );
       advance();
+
+      // While waiting on a slow task, keep creeping forward (never past 90%)
+      // so the counter never looks frozen.
+      const trickle = () => {
+        if (finished || target >= 1) return;
+        if (target < 0.9) {
+          target = Math.min(0.9, target + 0.02 + Math.random() * 0.03);
+          advance();
+        }
+        gsap.delayedCall(0.45 + Math.random() * 0.3, trickle);
+      };
+      gsap.delayedCall(0.5, trickle);
 
       // Cycling word in the centre.
       const words = gsap.utils.toArray(".preloader__word");
@@ -167,7 +211,15 @@ export default function Preloader() {
           </span>
           <span className="preloader__mask">
             <span className="preloader__count">
-              <span className="preloader__num">0</span>
+              {Array.from({ length: COLUMNS }, (_, c) => (
+                <span className={`preloader__col${c < COLUMNS - 1 ? " is-off" : ""}`} key={c}>
+                  <span className="preloader__strip">
+                    {STRIP.map((n, i) => (
+                      <span key={i}>{n}</span>
+                    ))}
+                  </span>
+                </span>
+              ))}
               <span className="preloader__pct">%</span>
             </span>
           </span>
