@@ -54,7 +54,7 @@ const angleTo = (a, b) => ((((b - a) % TAU) + TAU + Math.PI) % TAU) - Math.PI;
 // from controls, the form or text people may want to select.
 const NO_DRAG = "a, button, input, textarea, select, label, .cform, p, h1, h2, h3, li, .contact__col, .site-footer";
 
-export default function Globe({ className = "", background = false }) {
+export default function Globe({ className = "", background = false, apiRef, onFirstDrag }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const goHomeRef = useRef(() => {});
@@ -151,6 +151,10 @@ export default function Globe({ className = "", background = false }) {
     const onDown = (e) => {
       if (e.button !== undefined && e.button !== 0) return;
       if (background && e.target.closest?.(NO_DRAG)) return;
+      if (!s.everDragged) {
+        s.everDragged = true;
+        onFirstDrag?.();
+      }
       s.dragging = true;
       s.homing = 0;
       s.vPhi = 0;
@@ -192,6 +196,21 @@ export default function Globe({ className = "", background = false }) {
       start();
     };
     goHomeRef.current = goHome;
+    // A friendly flick — used by the "Drag the globe" hint.
+    const spin = () => {
+      s.homing = 0;
+      s.vPhi = 0.11;
+      s.idle = 0;
+      start();
+    };
+    if (apiRef) apiRef.current = { goHome, spin };
+
+    // "Drag" cursor label only over empty, draggable space.
+    const onOver = (e) => {
+      if (e.target.closest?.(NO_DRAG)) dragTarget.removeAttribute("data-cursor");
+      else dragTarget.setAttribute("data-cursor", "Drag");
+    };
+    if (background) dragTarget.addEventListener("pointerover", onOver);
 
     dragTarget.classList.add("globe-drag");
     dragTarget.addEventListener("pointerdown", onDown);
@@ -253,6 +272,9 @@ export default function Globe({ className = "", background = false }) {
       dragTarget.removeEventListener("pointerdown", onDown);
       dragTarget.removeEventListener("dblclick", onDblClick);
       dragTarget.classList.remove("globe-drag", "is-globe-dragging");
+      dragTarget.removeEventListener("pointerover", onOver);
+      dragTarget.removeAttribute("data-cursor");
+      if (apiRef) apiRef.current = null;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);

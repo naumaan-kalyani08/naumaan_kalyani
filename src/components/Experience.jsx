@@ -832,6 +832,25 @@ export default function Experience() {
                     </Fragment>
                   ))}
                 </h3>
+                {(item.logo || item.period) && (
+                  <div className="jcard__meta jcard__anim">
+                    {item.logo && (
+                      <span className="jcard__logo">
+                        <img
+                          src={item.logo}
+                          alt={`${item.place} logo`}
+                          loading="lazy"
+                          decoding="async"
+                          style={item.logoPosition ? { objectPosition: item.logoPosition } : undefined}
+                        />
+                      </span>
+                    )}
+                    <span className="jcard__meta-text">
+                      {item.period && <span className="jcard__period">{item.period}</span>}
+                      {item.location && <span className="jcard__location">{item.location}</span>}
+                    </span>
+                  </div>
+                )}
                 <p className="jcard__text jcard__anim">{item.text}</p>
               </article>
             </li>

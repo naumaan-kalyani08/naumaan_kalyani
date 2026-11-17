@@ -175,14 +175,20 @@ export default function ProjectCase({ index, flipState, onClose, onNext }) {
             ))}
           </ul>
 
-          <div className="case__actions case__anim">
-            <a className="btn btn--primary" href={project.live} target="_blank" rel="noreferrer noopener">
-              Visit live site <span className="btn__arrow" aria-hidden="true">→</span>
-            </a>
-            <a className="btn" href={project.repo} target="_blank" rel="noreferrer noopener">
-              Source code
-            </a>
-          </div>
+          {(project.live || project.repo) && (
+            <div className="case__actions case__anim">
+              {project.live && (
+                <a className="btn btn--primary" href={project.live} target="_blank" rel="noreferrer noopener">
+                  Visit live site <span className="btn__arrow" aria-hidden="true">→</span>
+                </a>
+              )}
+              {project.repo && (
+                <a className="btn" href={project.repo} target="_blank" rel="noreferrer noopener">
+                  Source code
+                </a>
+              )}
+            </div>
+          )}
 
           <button type="button" className="case__next case__anim" onClick={goNext}>
             <span className="case__next-label">Next project</span>

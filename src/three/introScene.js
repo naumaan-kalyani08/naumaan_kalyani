@@ -452,7 +452,8 @@ export function createScene(container, { isMobile, reduced = false }) {
   const p1 = new Vector3();
   const p2 = new Vector3();
   const p3 = new Vector3();
-  const t0 = new Vector3(0, 0.22, -0.2);
+  // Opening shot aims a little above the desk so the studio wall shows too.
+  const t0 = new Vector3(-0.6, 1.05, -1.2);
   const t1 = new Vector3(0, 0.95, -0.75);
   const t3 = new Vector3();
   const normalW = new Vector3();
@@ -530,7 +531,11 @@ export function createScene(container, { isMobile, reduced = false }) {
 
     // P0 — establishing shot (closed lid), orbit drifts while scrolling.
     // (portrait: a shallower ¾ angle so the near corner isn't clipped)
-    const r0 = Math.max(portrait ? 6.2 : 6.9, fitWidth(portrait ? 4.3 : 3.9)) * (1 + (1 - s.reveal) * 0.18);
+    // desktop: aim a touch right and come in a little so the dark far-left
+    // corner beyond the window doesn't eat the frame
+    t0.x = portrait ? -0.6 : 0.35;
+    t0.y = portrait ? 1.05 : 1.5;
+    const r0 = Math.max(portrait ? 7.4 : 9.0, fitWidth(portrait ? 5.2 : 5.5)) * (1 + (1 - s.reveal) * 0.18);
     const azimuth = portrait ? lerp(22, 12, s.orbit) : lerp(34, 20, s.orbit);
     spherical(p0, t0, r0, azimuth - (1 - s.reveal) * 6, portrait ? 34 : 22);
 

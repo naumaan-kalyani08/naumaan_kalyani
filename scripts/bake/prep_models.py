@@ -19,8 +19,8 @@ argv = sys.argv[sys.argv.index("--") + 1 :]
 SRC, OUT = argv[0], argv[1]
 
 MODELS = {
-    "desk_lamp_arm_01": dict(out="desk-lamp.glb", ratio=0.4, diffuse="desk_lamp_arm_01_black_1k.jpg", tex=512),
-    "potted_plant_02": dict(out="desk-plant.glb", ratio=0.27, tex=1024),
+    "desk_lamp_arm_01": dict(out="desk-lamp.glb", ratio=0.28, diffuse="desk_lamp_arm_01_black_1k.jpg", tex=512),
+    "potted_plant_02": dict(out="desk-plant.glb", ratio=0.17, tex=512),
 }
 
 

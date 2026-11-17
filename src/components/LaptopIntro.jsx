@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -16,7 +16,24 @@ const loadIntroScene = () => import("../three/introScene.js");
 const DONE_AT = 0.999;
 const SCREEN_OFF_OPACITY = 0.002; // see onFrame
 const SITE_HOST = profile.site || "naumaan.dev";
-const CLOCK = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date());
+const CLOCK = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
+
+// The menu bar clock: live, re-rendered right as each minute turns.
+function MenuClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    let timer;
+    const next = () => {
+      timer = setTimeout(() => {
+        setNow(new Date());
+        next();
+      }, 60000 - (Date.now() % 60000) + 30);
+    };
+    next();
+    return () => clearTimeout(timer);
+  }, []);
+  return <span>{CLOCK.format(now)}</span>;
+}
 const MENU = ["File", "Edit", "View", "History", "Window", "Help"];
 const smooth = (t) => t * t * (3 - 2 * t);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -498,7 +515,7 @@ function IntroStage({ children }) {
                 <rect x="2.5" y="2.5" width="15" height="8" rx="1.6" fill="currentColor" />
                 <rect x="23.4" y="4.3" width="1.8" height="4.4" rx="0.9" fill="currentColor" opacity="0.6" />
               </svg>
-              <span>{CLOCK}</span>
+              <MenuClock />
             </span>
           </div>
           <div className="intro__desk-dock">

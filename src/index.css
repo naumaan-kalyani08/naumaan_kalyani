@@ -448,8 +448,8 @@ html.theme-switching *::after {
   position: relative;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
   border: 1px solid var(--line);
   border-radius: 50%;

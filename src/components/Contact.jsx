@@ -44,7 +44,36 @@ function MagneticButton({ href, children }) {
 const getTime = () =>
   new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
 
+function GlobeHint({ globeApi, dragged }) {
+  const [touch] = useState(() => !isFinePointer());
+  const text = dragged
+    ? "Double-click it to find me"
+    : touch
+      ? "Swipe the globe sideways"
+      : "Drag the globe to spin it";
+
+  return (
+    <button
+      type="button"
+      className={`globe-hint ${dragged ? "is-done" : ""}`}
+      onClick={() => globeApi.current?.spin()}
+      aria-label="Spin the globe"
+    >
+      <span className="globe-hint__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />
+        </svg>
+      </span>
+      <span className="globe-hint__text" key={text}>
+        {text}
+      </span>
+    </button>
+  );
+}
+
 export default function Contact() {
+  const globeApi = useRef(null);
+  const [dragged, setDragged] = useState(false);
   const toastRef = useRef(null);
   const [time, setTime] = useState(getTime);
   const [toast, setToast] = useState("");
@@ -71,7 +100,7 @@ export default function Contact() {
 
   return (
     <section id="contact" className="contact">
-      <Globe background className="contact__globe" />
+      <Globe background className="contact__globe" apiRef={globeApi} onFirstDrag={() => setDragged(true)} />
 
       <div className="contact__inner">
         <p className="eyebrow" data-reveal>
@@ -89,6 +118,7 @@ export default function Contact() {
             </span>
             Copy email
           </button>
+          <GlobeHint globeApi={globeApi} dragged={dragged} />
         </div>
 
         <div className="contact__grid">

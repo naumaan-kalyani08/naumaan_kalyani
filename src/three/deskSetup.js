@@ -3,6 +3,8 @@ import {
   BoxGeometry,
   CanvasTexture,
   CatmullRomCurve3,
+  Box3,
+  CircleGeometry,
   ClampToEdgeWrapping,
   TextureLoader,
   Color,
@@ -34,12 +36,11 @@ import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferG
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
-import lampUrl from "../assets/models/desk-lamp.glb?url";
 import plantUrl from "../assets/models/desk-plant.glb?url";
 import walnutUrl from "../assets/wood/walnut.webp";
 import walnutNormalUrl from "../assets/wood/walnut-normal.webp";
-import oakUrl from "../assets/wood/oak.webp";
-import oakNormalUrl from "../assets/wood/oak-normal.webp";
+import m3Url from "../assets/art/bmw-m3-gtr.webp";
+import m8Url from "../assets/art/bmw-m8.webp";
 import memojiUrl from "../assets/memoji/smile.webp?url";
 
 /*
@@ -63,7 +64,7 @@ import memojiUrl from "../assets/memoji/smile.webp?url";
 const WALL_Z = -4.2;
 const WALL_W = 24;
 const WALL_H = 12;
-const LAMP_SPOT = { x: -2.9, z: -1.9 }; // where the lamp's light lands on the desk
+const LAMP_SPOT = { x: -2.05, z: -0.95 }; // where the lamp's light lands on the desk
 const MONITOR_GLOW = { x: 2.7, z: -1.3 }; // the monitor's light spill on the desk (night)
 /*
  * Baked lighting (Blender → scripts/bake/bake_desk.py): soft shadows, bounce
@@ -98,7 +99,7 @@ const wallUV = (v) => [(v.x - BAKE.wall.x0) / (BAKE.wall.x1 - BAKE.wall.x0), (v.
 
 /** Felt desk mat under the laptop (and phone/mouse): its top is at MAT_TOP. */
 export const MAT_TOP = 0.012;
-const MAT = { x: 0.5, z: 0.15, w: 4.9, d: 2.8 };
+const MAT = { x: 0.6, z: 0.2, w: 6.3, d: 3.45 };
 // Roughly where the opening shot's camera sits (camera-facing glow quads).
 const CAM0 = new Vector3(3.6, 2.6, 5.3);
 const KEY_DIR = { x: 0.6, z: -0.8 }; // key light's shadow direction on the desk
@@ -116,7 +117,7 @@ const PALETTE = {
   },
   light: {
     bg: "#f4f3ef",
-    wood: { base: "#cdb08a", light: "#e2c9a6", grain: "#9b7a55" },
+    wood: { base: "#4a3122", light: "#6b4a33", grain: "#24160d" }, // same wood as night: only the light changes
     notes: 1,
     screen: 0.96,
     monitor: 0.9,
@@ -232,184 +233,19 @@ function wallTexture(name, width) {
   // Wall wash: lighter near the desk, dissolving into the page colour above.
   const wash = ctx.createLinearGradient(0, Y(0), 0, Y(WALL_H));
   if (night) {
-    wash.addColorStop(0, "#161b30");
-    wash.addColorStop(0.45, "#0c1021");
+    wash.addColorStop(0, "#0b0d16");
+    wash.addColorStop(0.45, "#080a12");
     wash.addColorStop(1, bg);
   } else {
-    wash.addColorStop(0, "#e6e0d4");
-    wash.addColorStop(0.5, "#eeeae2");
+    wash.addColorStop(0, "#1c1a1d");
+    wash.addColorStop(0.6, "#211f22");
     wash.addColorStop(1, bg);
   }
   ctx.fillStyle = wash;
   ctx.fillRect(0, 0, width, height);
 
-  // Window (left of the laptop).
-  const win = { x0: -7.4, x1: -3.7, y0: 1.3, y1: 5.7 };
-  const wx = X(win.x0);
-  const wy = Y(win.y1);
-  const ww = (win.x1 - win.x0) * u;
-  const wh = (win.y1 - win.y0) * u;
-  ctx.save();
-  roundRect(ctx, wx, wy, ww, wh, u * 0.08);
-  ctx.clip();
-  const sky = ctx.createLinearGradient(0, wy, 0, wy + wh);
-  if (night) {
-    sky.addColorStop(0, "#0a1532");
-    sky.addColorStop(1, "#1d2a5c");
-  } else {
-    sky.addColorStop(0, "#b9d8ff");
-    sky.addColorStop(1, "#eef6ff");
-  }
-  ctx.fillStyle = sky;
-  ctx.fillRect(wx, wy, ww, wh);
-  if (night) {
-    // city lights → bokeh
-    for (let i = 0; i < 46; i += 1) {
-      const bx = wx + rand() * ww;
-      const by = wy + wh * (0.35 + rand() * 0.65);
-      const r = u * (0.06 + rand() * 0.22);
-      const hue = rand();
-      const color = hue < 0.5 ? "255,183,107" : hue < 0.8 ? "122,167,255" : "255,255,255";
-      const g = ctx.createRadialGradient(bx, by, 0, bx, by, r);
-      g.addColorStop(0, `rgba(${color},0.9)`);
-      g.addColorStop(1, `rgba(${color},0)`);
-      ctx.fillStyle = g;
-      ctx.fillRect(bx - r, by - r, r * 2, r * 2);
-    }
-    // moon glow
-    const mg = ctx.createRadialGradient(wx + ww * 0.75, wy + wh * 0.18, 0, wx + ww * 0.75, wy + wh * 0.18, u * 0.9);
-    mg.addColorStop(0, "rgba(220,230,255,0.85)");
-    mg.addColorStop(0.2, "rgba(220,230,255,0.35)");
-    mg.addColorStop(1, "rgba(220,230,255,0)");
-    ctx.fillStyle = mg;
-    ctx.fillRect(wx, wy, ww, wh);
-  } else {
-    // trees outside
-    for (let i = 0; i < 14; i += 1) {
-      const bx = wx + rand() * ww;
-      const by = wy + wh * (0.55 + rand() * 0.5);
-      const r = u * (0.5 + rand() * 0.7);
-      const g = ctx.createRadialGradient(bx, by, 0, bx, by, r);
-      g.addColorStop(0, "rgba(120,170,110,0.75)");
-      g.addColorStop(1, "rgba(120,170,110,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(bx - r, by - r, r * 2, r * 2);
-    }
-  }
-  ctx.restore();
-  // frame + mullions
-  ctx.strokeStyle = night ? "#060812" : "#fbfaf7";
-  ctx.lineWidth = u * 0.16;
-  roundRect(ctx, wx, wy, ww, wh, u * 0.08);
-  ctx.stroke();
-  ctx.lineWidth = u * 0.09;
-  ctx.beginPath();
-  ctx.moveTo(wx + ww / 2, wy);
-  ctx.lineTo(wx + ww / 2, wy + wh);
-  ctx.moveTo(wx, wy + wh * 0.42);
-  ctx.lineTo(wx + ww, wy + wh * 0.42);
-  ctx.stroke();
-  // sill
-  ctx.fillStyle = night ? "#0e1222" : "#f7f5f0";
-  ctx.fillRect(wx - u * 0.25, wy + wh, ww + u * 0.5, u * 0.16);
-
-  if (!night) {
-    // sunlight falling through the window onto the wall
-    ctx.fillStyle = "rgba(255,226,180,0.38)";
-    for (const [dx, wFrac] of [
-      [0, 0.46],
-      [0.54, 0.46],
-    ]) {
-      ctx.beginPath();
-      const sx = wx + ww * (1.25 + dx * 0.9);
-      ctx.moveTo(sx, wy + wh * 0.2);
-      ctx.lineTo(sx + ww * wFrac * 0.9, wy + wh * 0.28);
-      ctx.lineTo(sx + ww * wFrac * 0.9 + u * 0.9, wy + wh * 0.95);
-      ctx.lineTo(sx + u * 0.9, wy + wh * 0.87);
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-
-  // Shelf (right): two planks with books, a small plant and a speaker.
-  const shelfColor = night ? "#1c2134" : "#d8cdbb";
-  const bookColors = night
-    ? ["#3b3f8f", "#7c2d3a", "#2f6b5e", "#a0773b", "#4c5671", "#5b3a7a", "#3d5a80"]
-    : ["#e07a5f", "#3d405b", "#81b29a", "#f2cc8f", "#6d77c5", "#c9a6d8", "#5b8db8"];
-  const shelf = (y, x0, x1) => {
-    ctx.fillStyle = shelfColor;
-    ctx.fillRect(X(x0), Y(y), (x1 - x0) * u, u * 0.12);
-  };
-  shelf(3.4, 2.7, 7.2);
-  shelf(1.9, 3.1, 7.2);
-  let bx = 2.9;
-  while (bx < 5.6) {
-    const bw = 0.16 + rand() * 0.16;
-    const bh = 0.62 + rand() * 0.36;
-    ctx.fillStyle = bookColors[Math.floor(rand() * bookColors.length)];
-    roundRect(ctx, X(bx), Y(3.4 + bh), bw * u, bh * u, u * 0.02);
-    ctx.fill();
-    bx += bw + 0.02;
-  }
-  // leaning book
-  ctx.save();
-  ctx.translate(X(5.85), Y(3.4));
-  ctx.rotate(0.32);
-  ctx.fillStyle = bookColors[2];
-  ctx.fillRect(0, -0.85 * u, 0.2 * u, 0.85 * u);
-  ctx.restore();
-  // shelf plant
-  ctx.fillStyle = night ? "#2a2f45" : "#f1ede6";
-  roundRect(ctx, X(6.35), Y(3.95), 0.55 * u, 0.55 * u, u * 0.08);
-  ctx.fill();
-  for (let i = 0; i < 9; i += 1) {
-    const lx = X(6.62 + (rand() - 0.5) * 0.9);
-    const ly = Y(4.1 + rand() * 0.75);
-    const r = u * (0.16 + rand() * 0.16);
-    ctx.fillStyle = night ? "rgba(46,110,82,0.9)" : "rgba(92,150,96,0.95)";
-    ctx.beginPath();
-    ctx.ellipse(lx, ly, r, r * 0.55, rand() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // lower shelf: stacked books + speaker
-  for (let i = 0; i < 4; i += 1) {
-    ctx.fillStyle = bookColors[(i + 3) % bookColors.length];
-    ctx.fillRect(X(3.4 + i * 0.03), Y(1.9 + 0.13 * (i + 1)), u * (1.2 - i * 0.08), u * 0.12);
-  }
-  ctx.fillStyle = night ? "#11141f" : "#3a3d48";
-  roundRect(ctx, X(5.4), Y(2.75), u * 0.62, u * 0.85, u * 0.08);
-  ctx.fill();
-  ctx.fillStyle = night ? "#2a2f45" : "#6b6f7c";
-  ctx.beginPath();
-  ctx.arc(X(5.71), Y(2.2), u * 0.17, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (night) {
-    // Warm lamp light spilling onto the wall behind the lamp.
-    const lg = ctx.createRadialGradient(X(-2.7), Y(2.6), 0, X(-2.7), Y(2.6), u * 3.4);
-    lg.addColorStop(0, "rgba(255,186,120,0.32)");
-    lg.addColorStop(1, "rgba(255,186,120,0)");
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = lg;
-    ctx.fillRect(0, 0, width, height);
-    ctx.globalCompositeOperation = "source-over";
-  } else {
-    // Framed print above the desk.
-    const fx = X(-0.95);
-    const fy = Y(5.4);
-    ctx.fillStyle = "#fbfaf7";
-    ctx.fillRect(fx, fy, 1.9 * u, 2.3 * u);
-    const art = ctx.createLinearGradient(fx, fy, fx + 1.9 * u, fy + 2.3 * u);
-    art.addColorStop(0, "#6366f1");
-    art.addColorStop(1, "#5fd6f6");
-    ctx.fillStyle = art;
-    ctx.fillRect(fx + 0.18 * u, fy + 0.18 * u, 1.54 * u, 1.94 * u);
-    ctx.fillStyle = "#fff";
-    ctx.font = `800 ${Math.round(0.7 * u)}px "Space Grotesk", system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("nk", fx + 0.95 * u, fy + 1.15 * u);
-  }
+  // (The slat wall in front of it is 3D: see createDeskSetup. This is the
+  // dark felt backing that shows between the slats.)
 
   // Contact shadow where the desk meets the wall.
   const base = ctx.createLinearGradient(0, Y(0), 0, Y(0.7));
@@ -444,7 +280,79 @@ function wallTexture(name, width) {
 // blurred wall), so the tubes stay crisp. Night: glowing white-violet tubes
 // with a halo. Day: the same tubes lit, with a softer coloured glow that
 // still reads against the light wall.
-const NEON = { x: -0.9, y: 1.48, w: 3.2, h: 1.8 };
+const NEON = { x: -5.1, y: 1.95, w: 3.2, h: 1.8 };
+// Studio wall: vertical wooden slats on dark felt (design inspired by
+// acoustic slat panels), in front of the wall plane.
+const SLAT = { w: 0.19, gap: 0.075, d: 0.09, h: 7.5, x0: -9.2, x1: 9.2 };
+// A tall window cut into the slats on the left.
+const WIN = { x0: -7.75, x1: -5.75, y0: 0.7, y1: 4.8 };
+
+// The view through the window: night city (bokeh) or a soft daytime garden.
+function windowView(name) {
+  const w = 256;
+  const h = 512;
+  const canvas = makeCanvas(w, h);
+  const ctx = canvas.getContext("2d");
+  const night = name === "dark";
+  const sky = ctx.createLinearGradient(0, 0, 0, h);
+  if (night) {
+    sky.addColorStop(0, "#070b1d");
+    sky.addColorStop(0.6, "#16224d");
+    sky.addColorStop(1, "#2a2f5c");
+  } else {
+    sky.addColorStop(0, "#bcd9f2");
+    sky.addColorStop(0.55, "#e7f1f7");
+    sky.addColorStop(1, "#cfdcc4");
+  }
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+  let seed = 11;
+  const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  if (night) {
+    // distant towers with lit windows, then out-of-focus city lights
+    for (let i = 0; i < 9; i += 1) {
+      const bw = 24 + r() * 40;
+      const bh = 120 + r() * 220;
+      const bx = r() * w;
+      ctx.fillStyle = "rgba(8,10,24,0.9)";
+      ctx.fillRect(bx, h - bh, bw, bh);
+      for (let k = 0; k < 18; k += 1) {
+        ctx.fillStyle = r() > 0.5 ? "rgba(255,206,140,0.75)" : "rgba(150,180,255,0.45)";
+        ctx.fillRect(bx + 3 + r() * (bw - 8), h - bh + 6 + r() * (bh - 12), 3, 4);
+      }
+    }
+    for (let i = 0; i < 40; i += 1) {
+      const bx = r() * w;
+      const by = h * (0.45 + r() * 0.55);
+      const rad = 4 + r() * 16;
+      const c = r() < 0.6 ? "255,190,120" : "130,165,255";
+      const g = ctx.createRadialGradient(bx, by, 0, bx, by, rad);
+      g.addColorStop(0, `rgba(${c},0.85)`);
+      g.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(bx - rad, by - rad, rad * 2, rad * 2);
+    }
+    const moon = ctx.createRadialGradient(w * 0.7, h * 0.14, 0, w * 0.7, h * 0.14, 46);
+    moon.addColorStop(0, "rgba(230,236,255,0.95)");
+    moon.addColorStop(0.18, "rgba(230,236,255,0.5)");
+    moon.addColorStop(1, "rgba(230,236,255,0)");
+    ctx.fillStyle = moon;
+    ctx.fillRect(0, 0, w, h);
+  } else {
+    for (let i = 0; i < 26; i += 1) {
+      const bx = r() * w;
+      const by = h * (0.45 + r() * 0.6);
+      const rad = 30 + r() * 60;
+      const g = ctx.createRadialGradient(bx, by, 0, bx, by, rad);
+      const c = r() < 0.5 ? "96,140,88" : "132,168,110";
+      g.addColorStop(0, `rgba(${c},0.8)`);
+      g.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(bx - rad, by - rad, rad * 2, rad * 2);
+    }
+  }
+  return toTexture(canvas);
+}
 
 function neonTexture(name, width) {
   const height = Math.round((width * NEON.h) / NEON.w);
@@ -853,7 +761,24 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   // Wall: textures painted lazily per theme, cached.
   const wallCache = {};
   const wallFor = (name) => (wallCache[name] ??= own(wallTexture(name, isMobile ? 512 : 1024)));
-  const wall = new Mesh(new PlaneGeometry(WALL_W, WALL_H), new MeshBasicMaterial({ toneMapped: false }));
+  // The wall backing, with the window opening cut out (local coords: the
+  // plane is centred at y = WALL_H / 2).
+  const wallShape = roundedRectShape(WALL_W, WALL_H, 0.0001);
+  const wallHole = new Shape();
+  const hy = (y) => y - WALL_H / 2;
+  wallHole.moveTo(WIN.x0, hy(WIN.y0));
+  wallHole.lineTo(WIN.x0, hy(WIN.y1));
+  wallHole.lineTo(WIN.x1, hy(WIN.y1));
+  wallHole.lineTo(WIN.x1, hy(WIN.y0));
+  wallHole.lineTo(WIN.x0, hy(WIN.y0));
+  wallShape.holes.push(wallHole);
+  const wallGeo = new ShapeGeometry(wallShape);
+  {
+    const wp = wallGeo.attributes.position;
+    const wuv = wallGeo.attributes.uv;
+    for (let i = 0; i < wp.count; i += 1) wuv.setXY(i, wp.getX(i) / WALL_W + 0.5, wp.getY(i) / WALL_H + 0.5);
+  }
+  const wall = new Mesh(wallGeo, new MeshBasicMaterial({ toneMapped: false }));
   wall.position.set(0, WALL_H / 2, WALL_Z);
   group.add(wall);
   bakeUV(wall, wallUV);
@@ -862,7 +787,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   // Scanned wood textures (cached per url).
   const WOOD = {
     dark: { map: walnutUrl, normal: walnutNormalUrl, tint: "#b98463" },
-    light: { map: oakUrl, normal: oakNormalUrl, tint: "#ffffff" },
+    light: { map: walnutUrl, normal: walnutNormalUrl, tint: "#b98463" }, // same walnut by day
   };
   const scannedCache = {};
   const scannedTex = (url, color) =>
@@ -910,7 +835,11 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     new MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false })
   );
   // high on the wall: phones frame more wall, so it can sit higher there
-  neon.position.set(NEON.x, isMobile ? 2.25 : NEON.y, WALL_Z + 0.02);
+  // Phones frame the wall's centre (higher): the sign goes above the prints.
+  // High on the wall behind the monitor (a whiteboard hangs below the M3).
+  const neonAt = isMobile ? new Vector3(-1.75, 3.7, 0) : new Vector3(1.75, 3.3, 0);
+  neonAt.z = WALL_Z + SLAT.d + 0.03;
+  neon.position.copy(neonAt);
   neon.renderOrder = 1;
   group.add(neon);
   // The tubes are drawn in the brand face: redraw once it has loaded.
@@ -962,21 +891,42 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   const graphite = "#2b2d34";
   const steel = "#b9bcc4";
 
-  // Desk lamp + plant: real scanned models (Poly Haven, CC0), prepared for the
-  // web by scripts/bake/prep_models.py and loaded once the scene is up.
-  const LAMP = { x: -3.15, z: -2.4, ry: -2.5, scale: 2.35 };
-  const PLANT = { x: -4.45, z: -1.75, ry: 0.6, scale: 2.9 };
-  const lampBase = new Vector3(LAMP.x, 0, LAMP.z);
+  // Desk lamp — graphite arms with brass joints, a lathed shade with a brass
+  // rim and a glowing inside (code-made, no download).
+  const lampBase = new Vector3(-3.15, 0.1, -2.4);
+  const elbow = new Vector3(-3.3, 1.95, -2.85);
+  const headAt = new Vector3(-2.4, 2.05, -1.7);
+  // matte black + brushed steel, with an architect-lamp head: a deep
+  // rounded dome ending in a short cylindrical neck at the back
+  const brass = "#c9ccd2";
+  metal.push(part(lathe([[0, 0], [0.42, 0], [0.47, 0.025], [0.46, 0.07], [0.39, 0.095], [0.1, 0.11], [0, 0.11]], n(40)), { position: [lampBase.x, 0, lampBase.z], color: graphite }));
+  metal.push(rod(lampBase, elbow, 0.032, graphite, n(16)));
+  metal.push(rod(elbow, headAt, 0.032, graphite, n(16)));
+  // the parallel spring rods typical of an architect lamp
+  const side = new Vector3().subVectors(elbow, lampBase).cross(new Vector3(0, 0, 1)).normalize().multiplyScalar(0.07);
+  metal.push(rod(lampBase.clone().add(side).setY(0.3), elbow.clone().add(side), 0.012, steel, n(8)));
+  metal.push(rod(elbow.clone().add(side), headAt.clone().add(side), 0.012, steel, n(8)));
+  metal.push(part(new CylinderGeometry(0.075, 0.075, 0.13, n(18)).rotateX(Math.PI / 2), { position: elbow.toArray(), color: brass }));
+  metal.push(part(lathe([[0.07, 0], [0.078, 0.02], [0.078, 0.07], [0.055, 0.09]], n(24)), { position: [lampBase.x, 0.105, lampBase.z], color: brass }));
+  metal.push(part(new SphereGeometry(0.055, n(16), n(12)), { position: headAt.toArray(), color: brass }));
+  const shadeDir = new Vector3(LAMP_SPOT.x, 0, LAMP_SPOT.z).sub(headAt).normalize();
+  const shadeAt = headAt.clone().addScaledVector(shadeDir, 0.3);
+  // dome bell: flared lip, rounded shoulder, then a narrow neck (r × y)
+  const shadeGeo = lathe([[0.36, 0], [0.355, 0.03], [0.33, 0.12], [0.28, 0.2], [0.2, 0.26], [0.13, 0.285], [0.12, 0.3], [0.12, 0.4], [0.1, 0.42], [0, 0.42]], n(48));
+  orient(shadeGeo, shadeAt, new Vector3(0, -1, 0), shadeDir);
+  metal.push(part(shadeGeo, { color: graphite }));
+  const rim = new TorusGeometry(0.358, 0.01, n(8), n(48));
+  rim.rotateX(Math.PI / 2);
+  orient(rim, shadeAt, new Vector3(0, -1, 0), shadeDir);
+  metal.push(part(rim, { color: brass }));
+  const bulbAt = headAt.clone().addScaledVector(shadeDir, 0.2);
+
+  // Plant: a real scanned model (Poly Haven, CC0), loaded once the scene is up.
+  const PLANT = { x: -5.35, z: -1.45, ry: 0.6, scale: 1.9 }; // well clear of the mug
   const plant = { x: PLANT.x, z: PLANT.z };
-  // The bulb (model space, metres, from prep_models.py) in world space.
-  const bulbAt = new Vector3(0.0138, 0.7717, -0.1882)
-    .multiplyScalar(LAMP.scale)
-    .applyAxisAngle(new Vector3(0, 1, 0), LAMP.ry)
-    .add(lampBase);
-  const shadeDir = new Vector3(0, -1, 0);
 
   // Mug — lathed ceramic with a real rim and inside, coffee, handle.
-  const mug = { x: 2.85, z: -0.95 };
+  const mug = { x: -3.55, z: -0.85 }; // left, between the vase and the notebook
   gloss.push(
     part(
       lathe([[0, 0], [0.31, 0], [0.335, 0.015], [0.35, 0.05], [0.36, 0.8], [0.352, 0.83], [0.335, 0.83], [0.325, 0.8], [0.315, 0.08], [0, 0.07]], n(48)),
@@ -1009,7 +959,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   metal.push(part(clip, { color: "#d4b25a" }));
 
   // iPhone (right, beside the laptop): rounded titanium body + buttons.
-  const phone = { x: 2.4, z: 0.4, ry: -0.18, w: 0.72, d: 1.48, h: 0.075 };
+  const phone = { x: isMobile ? 2.4 : 2.75, z: isMobile ? 0.4 : -0.2, ry: -0.18, w: 0.72, d: 1.48, h: 0.075 };
   const body = new ExtrudeGeometry(roundedRectShape(phone.w, phone.d, 0.12), {
     depth: phone.h - 0.02,
     bevelEnabled: true,
@@ -1054,10 +1004,37 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   bakeUV(mat, deskUV);
 
   // Magic Mouse (right of the laptop): a flattened glossy shell.
-  const mouse = { x: 2.02, z: -0.42, ry: -0.2 };
-  const mouseGeo = new SphereGeometry(0.5, n(32), n(16), 0, Math.PI * 2, 0, Math.PI / 2);
-  mouseGeo.applyMatrix4(new Matrix4().makeScale(0.36, 0.2, 0.62));
-  gloss.push(part(mouseGeo, { position: [mouse.x, MAT_TOP, mouse.z], rotation: [0, mouse.ry, 0], color: "#f3f3f1" }));
+  const mouse = isMobile ? { x: 2.02, z: -0.42, ry: -0.2 } : { x: 1.98, z: -0.78, ry: -0.2 };
+  // Magic Mouse: a low, gently domed white shell (flatter at the front) on a
+  // thin aluminium base that shows as a silver line all around.
+  // Footprint is a squircle (|x|³+|z|³=1) 0.3 × 0.58; the top is a low arch
+  // that peaks just behind the middle and falls off softly at the edges.
+  const MOUSE = { w: 0.3, l: 0.58, h: 0.075, base: 0.02 };
+  const squircle = (t) => Math.pow(Math.abs(Math.cos(t)) ** 3 + Math.abs(Math.sin(t)) ** 3, -1 / 3);
+  const mouseGeo = new SphereGeometry(1, n(48), n(16), 0, Math.PI * 2, 0, Math.PI / 2);
+  {
+    const mp = mouseGeo.attributes.position;
+    for (let i = 0; i < mp.count; i += 1) {
+      const x = mp.getX(i);
+      const z = mp.getZ(i);
+      const r = Math.min(1, Math.hypot(x, z));
+      const k = squircle(Math.atan2(z, x));
+      const zz = z * k; // -1 (front, toward the monitor) … 1 (palm end)
+      const arch = Math.max(0.35, 1 - 0.55 * (zz - 0.15) ** 2);
+      mp.setXYZ(i, x * k * (MOUSE.w / 2), MOUSE.h * arch * Math.pow(Math.max(0, 1 - r ** 2.4), 0.5), zz * (MOUSE.l / 2));
+    }
+    mouseGeo.computeVertexNormals();
+  }
+  gloss.push(part(mouseGeo, { position: [mouse.x, MAT_TOP + MOUSE.base, mouse.z], rotation: [0, mouse.ry, 0], color: "#f7f6f2" }));
+  const footprint = new Shape();
+  for (let i = 0; i <= 64; i += 1) {
+    const t = (i / 64) * Math.PI * 2;
+    const k = squircle(t) * 0.985;
+    footprint[i ? "lineTo" : "moveTo"](Math.cos(t) * k * (MOUSE.w / 2), Math.sin(t) * k * (MOUSE.l / 2));
+  }
+  const baseGeo = new ExtrudeGeometry(footprint, { depth: MOUSE.base, bevelEnabled: false, curveSegments: 1 });
+  baseGeo.rotateX(Math.PI / 2).translate(0, MOUSE.base, 0);
+  metal.push(part(baseGeo, { position: [mouse.x, MAT_TOP, mouse.z], rotation: [0, mouse.ry, 0], color: "#c8cacf" }));
 
   // Wireless keyboard in front of the monitor: aluminium base + white keys.
   const kb = { x: 2.55, z: -1.85, ry: -0.3 };
@@ -1069,21 +1046,55 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   metal.push(part(new RoundedBoxGeometry(2.25, 0.05, 0.74, 2, 0.02), { position: kbAt(0, 0.025, 0), rotation: [0, kb.ry, 0], color: steel }));
   const pitch = 0.148;
   const rows = [Array(14).fill(1), Array(14).fill(1), Array(14).fill(1), Array(14).fill(1), [1, 1, 1, 1.3, 5.4, 1.3, 1, 1, 1]];
+  const LEGENDS = [
+    ["esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "⌫"],
+    ["⇥", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\"],
+    ["⇪", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "#", "↩"],
+    ["⇧", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "↑", "?", "⇧"],
+    ["fn", "⌃", "⌥", "⌘", "", "⌘", "⌥", "←", "→"],
+  ];
+  // Legend atlas: one 64×64 cell per key (16 × 5 grid), cell 15 of row 0 blank.
+  const legendCanvas = makeCanvas(1024, 320);
+  {
+    const lc = legendCanvas.getContext("2d");
+    lc.fillStyle = "#f6f6f4";
+    lc.fillRect(0, 0, 1024, 320);
+    lc.fillStyle = "#3b3d44";
+    lc.textAlign = "center";
+    lc.textBaseline = "middle";
+    LEGENDS.forEach((row, r) =>
+      row.forEach((label, i) => {
+        lc.font = `500 ${label.length > 1 ? 20 : 30}px ${FONT_UI}`;
+        lc.fillText(label, i * 64 + 32, r * 64 + 34);
+      })
+    );
+  }
+  const legendTexture = own(toTexture(legendCanvas));
+  legendTexture.anisotropy = anisotropy;
+  const keyParts = [];
   rows.forEach((row, r) => {
     const total = row.reduce((a, b) => a + b, 0);
     let x = -(total * pitch) / 2;
-    row.forEach((units) => {
+    row.forEach((units, i) => {
       const w = units * pitch;
-      matte.push(
-        part(new BoxGeometry(w - 0.022, 0.024, pitch - 0.026), {
-          position: kbAt(x + w / 2, 0.062, -0.27 + r * 0.135),
-          rotation: [0, kb.ry, 0],
-          color: "#f4f4f2",
-        })
-      );
+      const g = new BoxGeometry(w - 0.022, 0.024, pitch - 0.026);
+      // top face (+y, vertices 8–11) shows its legend cell; the rest is plain
+      const uv = g.attributes.uv;
+      const u0 = (i * 64 + (units > 1 ? 0 : 4)) / 1024;
+      const u1 = (i * 64 + (units > 1 ? 64 : 60)) / 1024;
+      const v0 = 1 - (r * 64 + 60) / 320;
+      const v1 = 1 - (r * 64 + 4) / 320;
+      for (let k = 0; k < uv.count; k += 1) {
+        if (k >= 8 && k < 12) uv.setXY(k, uv.getX(k) ? u1 : u0, uv.getY(k) ? v1 : v0);
+        else uv.setXY(k, 15.5 / 16, 1 - 0.5 / 5);
+      }
+      keyParts.push(part(g, { position: kbAt(x + w / 2, 0.062, -0.27 + r * 0.135), rotation: [0, kb.ry, 0] }));
       x += w;
     });
   });
+  const keys = new Mesh(mergeGeometries(keyParts, false), new MeshStandardMaterial({ map: legendTexture, roughness: 0.45, metalness: 0, envMapIntensity: 0.6 }));
+  keyParts.forEach((g) => g.dispose());
+  group.add(keys);
 
   // USB-C cable: laptop's right side → behind the keyboard → monitor stand.
   const cablePath = new CatmullRomCurve3(
@@ -1101,6 +1112,278 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   );
   matte.push(part(new TubeGeometry(cablePath, n(90), 0.018, n(6), false), { color: "#e9e9e6" }));
 
+  /* ---- Framed car prints on the slats ---- */
+  const frontZ = WALL_Z + SLAT.d;
+  // M3 GTR high in the centre (the neon sits below it), the white M8 on its left.
+  const ART = [
+    { url: m3Url, x: -0.75, y: isMobile ? 2.4 : 2.85, w: isMobile ? 2.1 : 1.9, ratio: 719 / 1280 }, // BMW M3 GTR
+    { url: m8Url, x: -2.95, y: isMobile ? 2.5 : 2.55, w: 0.85, ratio: 1137 / 640 }, // BMW M8
+  ];
+  const FRAME = { pad: 0.022, rim: 0.055, depth: 0.09 };
+  const frameShadowParts = [];
+  const glassParts = [];
+  const artMeshes = ART.map((a) => {
+    const h = a.w * a.ratio;
+    const iw = a.w + 2 * FRAME.pad; // inside of the moulding
+    const ih = h + 2 * FRAME.pad;
+    const ow = iw + 2 * FRAME.rim;
+    const oh = ih + 2 * FRAME.rim;
+    // moulding: a deep black ring (the print sits recessed inside it)
+    const ring = roundedRectShape(ow, oh, 0.012);
+    const hole = new Shape();
+    hole.moveTo(-iw / 2, -ih / 2);
+    hole.lineTo(-iw / 2, ih / 2);
+    hole.lineTo(iw / 2, ih / 2);
+    hole.lineTo(iw / 2, -ih / 2);
+    hole.lineTo(-iw / 2, -ih / 2);
+    ring.holes.push(hole);
+    const moulding = new ExtrudeGeometry(ring, { depth: FRAME.depth, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 2, curveSegments: 4 });
+    matte.push(part(moulding, { position: [a.x, a.y, frontZ], color: "#0e0f11" }));
+    // thin white mat, recessed
+    matte.push(part(new BoxGeometry(iw, ih, 0.01), { position: [a.x, a.y, frontZ + FRAME.depth * 0.55], color: "#f3f1ec" }));
+    const mesh = new Mesh(new PlaneGeometry(a.w, h), new MeshBasicMaterial({ toneMapped: false, color: 0x222222 }));
+    mesh.position.set(a.x, a.y, frontZ + FRAME.depth * 0.55 + 0.006);
+    mesh.userData.tint = true;
+    // soft drop shadow on the slats (light from above-left)
+    frameShadowParts.push(part(new PlaneGeometry(ow + 0.5, oh + 0.5), { position: [a.x + 0.07, a.y - 0.12, frontZ + 0.002] }));
+    // glass: a faint diagonal reflection over the print
+    glassParts.push(part(new PlaneGeometry(iw, ih), { position: [a.x, a.y, frontZ + FRAME.depth - 0.004] }));
+    group.add(mesh);
+    new TextureLoader().load(a.url, (texture) => {
+      texture.colorSpace = SRGBColorSpace;
+      texture.anisotropy = anisotropy;
+      mesh.material.map = own(texture);
+      mesh.material.color.setScalar(themeKey === "dark" ? 0.82 : 0.97);
+      mesh.material.needsUpdate = true;
+      onChange?.();
+    });
+    return mesh;
+  });
+  {
+    const sc = makeCanvas(128, 128);
+    const c = sc.getContext("2d");
+    c.fillStyle = "#000";
+    c.fillRect(30, 30, 68, 68);
+    softBlur(sc, 4);
+    const frameShadows = new Mesh(
+      mergeGeometries(frameShadowParts, false),
+      new MeshBasicMaterial({ color: 0x000000, map: own(toTexture(sc)), transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false })
+    );
+    frameShadows.renderOrder = 1;
+    group.add(frameShadows);
+    const gc = makeCanvas(128, 128);
+    const g2 = gc.getContext("2d");
+    const sheen = g2.createLinearGradient(0, 0, 128, 128);
+    sheen.addColorStop(0, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.42, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.5, "rgba(255,255,255,0.55)");
+    sheen.addColorStop(0.62, "rgba(255,255,255,0)");
+    sheen.addColorStop(0.75, "rgba(255,255,255,0.2)");
+    sheen.addColorStop(0.8, "rgba(255,255,255,0)");
+    g2.fillStyle = sheen;
+    g2.fillRect(0, 0, 128, 128);
+    const frameGlass = new Mesh(
+      mergeGeometries(glassParts, false),
+      new MeshBasicMaterial({ map: own(toTexture(gc)), transparent: true, opacity: 0.16, blending: AdditiveBlending, depthWrite: false, toneMapped: false })
+    );
+    frameGlass.renderOrder = 2;
+    group.add(frameGlass);
+    artMeshes.push(frameShadows, frameGlass);
+  }
+
+  /* ---- Whiteboard under the M3 GTR print: a to-do list + a thought ---- */
+  const board = { x: -0.75, y: isMobile ? 1.15 : 1.6, w: 2.0, h: 0.98 };
+  const boardCanvas = makeCanvas(1024, 512);
+  {
+    const b = boardCanvas.getContext("2d");
+    b.fillStyle = "#fbfbf8";
+    b.fillRect(0, 0, 1024, 512);
+    // faint marker ghosting, like a used board
+    b.fillStyle = "rgba(120,130,150,0.05)";
+    for (let i = 0; i < 6; i += 1) b.fillRect(80 + i * 140, 120 + (i % 3) * 90, 160, 26);
+    b.lineCap = "round";
+    b.lineJoin = "round";
+    b.textBaseline = "middle";
+    b.fillStyle = "#1f4fd6";
+    b.font = `700 54px ${FONT_HAND}`;
+    b.fillText("TO-DO", 48, 66);
+    b.strokeStyle = "#1f4fd6";
+    b.lineWidth = 5;
+    b.beginPath();
+    b.moveTo(48, 100);
+    b.quadraticCurveTo(140, 92, 232, 102);
+    b.stroke();
+    const items = [
+      [true, "Ship portfolio v2"],
+      [false, "Polish the 3D desk"],
+      [false, "Learn WebGL shaders"],
+      [false, "Reply to emails"],
+    ];
+    b.font = `600 36px ${FONT_HAND}`;
+    items.forEach(([done, text], i) => {
+      const y = 160 + i * 74;
+      b.strokeStyle = "#22252c";
+      b.lineWidth = 4;
+      b.strokeRect(52, y - 18, 34, 34);
+      if (done) {
+        b.strokeStyle = "#16a34a";
+        b.lineWidth = 6;
+        b.beginPath();
+        b.moveTo(56, y);
+        b.lineTo(68, y + 14);
+        b.lineTo(94, y - 22);
+        b.stroke();
+      }
+      b.fillStyle = "#22252c";
+      b.fillText(text, 108, y + 2);
+      if (done) {
+        b.strokeStyle = "#22252c";
+        b.lineWidth = 3;
+        b.beginPath();
+        b.moveTo(104, y + 2);
+        b.lineTo(104 + b.measureText(text).width, y);
+        b.stroke();
+      }
+    });
+    // the thought, in red, on the right
+    b.save();
+    b.translate(760, 250);
+    b.rotate(-0.06);
+    b.fillStyle = "#d9342b";
+    b.textAlign = "center";
+    b.font = `700 44px ${FONT_HAND}`;
+    ["Done is", "better than", "perfect."].forEach((line, i) => b.fillText(line, 0, -70 + i * 58));
+    b.strokeStyle = "#d9342b";
+    b.lineWidth = 4;
+    b.beginPath();
+    b.ellipse(0, -12, 190, 130, 0, 0, Math.PI * 2);
+    b.stroke();
+    b.restore();
+  }
+  const boardTexture = own(toTexture(boardCanvas));
+  boardTexture.anisotropy = anisotropy;
+  const boardFace = new Mesh(new PlaneGeometry(board.w, board.h), new MeshBasicMaterial({ map: boardTexture, toneMapped: false }));
+  boardFace.position.set(board.x, board.y, frontZ + 0.035);
+  boardFace.userData.tint = true;
+  group.add(boardFace);
+  artMeshes.push(boardFace);
+  // aluminium frame + marker tray
+  const bf = 0.045;
+  metal.push(part(new BoxGeometry(board.w + 2 * bf, bf, 0.05), { position: [board.x, board.y + board.h / 2 + bf / 2, frontZ + 0.025], color: "#c9ccd2" }));
+  metal.push(part(new BoxGeometry(board.w + 2 * bf, bf, 0.05), { position: [board.x, board.y - board.h / 2 - bf / 2, frontZ + 0.025], color: "#c9ccd2" }));
+  metal.push(part(new BoxGeometry(bf, board.h, 0.05), { position: [board.x - board.w / 2 - bf / 2, board.y, frontZ + 0.025], color: "#c9ccd2" }));
+  metal.push(part(new BoxGeometry(bf, board.h, 0.05), { position: [board.x + board.w / 2 + bf / 2, board.y, frontZ + 0.025], color: "#c9ccd2" }));
+  metal.push(part(new BoxGeometry(board.w * 0.5, 0.025, 0.12), { position: [board.x + 0.3, board.y - board.h / 2 - bf - 0.0125, frontZ + 0.06], color: "#b4b7bd" }));
+  [["#1f4fd6", 0.15], ["#d9342b", 0.42]].forEach(([color, dx]) => {
+    const marker = new CylinderGeometry(0.022, 0.022, 0.28, n(10));
+    marker.rotateZ(Math.PI / 2);
+    gloss.push(part(marker, { position: [board.x + dx, board.y - board.h / 2 - bf + 0.012, frontZ + 0.07], color }));
+  });
+
+  /* ---- The window (left): frame, mullions, sill, the view ---- */
+  const winW = WIN.x1 - WIN.x0;
+  const winH = WIN.y1 - WIN.y0;
+  const winCx = (WIN.x0 + WIN.x1) / 2;
+  const winCy = (WIN.y0 + WIN.y1) / 2;
+  // A recessed opening: the glass sits ~0.45 deep in the wall, with lit
+  // reveals (jambs, head, sill) around it, a deep black steel frame with
+  // mullions, a protruding sill, glass reflections and a sheer curtain.
+  const REVEAL = 0.45;
+  const glassZ = WALL_Z - REVEAL;
+  const revealMat = "#d9d5cc";
+  matte.push(part(new BoxGeometry(0.04, winH, REVEAL), { position: [WIN.x0, winCy, WALL_Z - REVEAL / 2], color: revealMat })); // left reveal
+  matte.push(part(new BoxGeometry(0.04, winH, REVEAL), { position: [WIN.x1, winCy, WALL_Z - REVEAL / 2], color: revealMat })); // right reveal
+  matte.push(part(new BoxGeometry(winW, 0.04, REVEAL), { position: [winCx, WIN.y1, WALL_Z - REVEAL / 2], color: revealMat })); // head
+  matte.push(part(new BoxGeometry(winW, 0.04, REVEAL), { position: [winCx, WIN.y0, WALL_Z - REVEAL / 2], color: "#cfc9bd" })); // inner sill
+  const winBar = (w, h, x, y, depth = 0.07) => matte.push(part(new BoxGeometry(w, h, depth), { position: [x, y, glassZ + depth / 2], color: "#111214" }));
+  winBar(winW, 0.09, winCx, WIN.y1 - 0.045); // frame
+  winBar(winW, 0.09, winCx, WIN.y0 + 0.045);
+  winBar(0.09, winH, WIN.x0 + 0.045, winCy);
+  winBar(0.09, winH, WIN.x1 - 0.045, winCy);
+  winBar(0.045, winH, winCx, winCy, 0.06); // mullion
+  winBar(winW, 0.045, winCx, WIN.y0 + winH * 0.64, 0.06); // transom
+  // casing around the opening, on the slat face
+  const caseZ = WALL_Z + SLAT.d;
+  matte.push(part(new BoxGeometry(winW + 0.3, 0.12, 0.05), { position: [winCx, WIN.y1 + 0.06, caseZ], color: "#141518" }));
+  matte.push(part(new BoxGeometry(0.12, winH + 0.24, 0.05), { position: [WIN.x0 - 0.06, winCy, caseZ], color: "#141518" }));
+  matte.push(part(new BoxGeometry(0.12, winH + 0.24, 0.05), { position: [WIN.x1 + 0.06, winCy, caseZ], color: "#141518" }));
+  // the room-side sill (walnut), protruding
+  matte.push(part(new RoundedBoxGeometry(winW + 0.45, 0.07, 0.42, 2, 0.02), { position: [winCx, WIN.y0 - 0.02, WALL_Z + 0.12], color: "#3a2a1e" }));
+  const view = new Mesh(new PlaneGeometry(winW, winH), new MeshBasicMaterial({ toneMapped: false }));
+  view.position.set(winCx, winCy, glassZ - 0.02);
+  group.add(view);
+  // reflections on the glass (two soft diagonal streaks)
+  {
+    const rc = makeCanvas(128, 256);
+    const rx = rc.getContext("2d");
+    const streak = rx.createLinearGradient(0, 0, 128, 256);
+    streak.addColorStop(0.2, "rgba(255,255,255,0)");
+    streak.addColorStop(0.32, "rgba(255,255,255,0.5)");
+    streak.addColorStop(0.4, "rgba(255,255,255,0)");
+    streak.addColorStop(0.55, "rgba(255,255,255,0)");
+    streak.addColorStop(0.6, "rgba(255,255,255,0.25)");
+    streak.addColorStop(0.66, "rgba(255,255,255,0)");
+    rx.fillStyle = streak;
+    rx.fillRect(0, 0, 128, 256);
+    const glass = new Mesh(
+      new PlaneGeometry(winW, winH),
+      new MeshBasicMaterial({ map: own(toTexture(rc)), transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false, toneMapped: false })
+    );
+    glass.position.set(winCx, winCy, glassZ + 0.075);
+    glass.renderOrder = 2;
+    group.add(glass);
+    artMeshes.push(glass);
+  }
+  // sheer linen curtain gathered on the left, gently folded
+  {
+    const cw = 0.75;
+    const ch = WIN.y1 - WIN.y0 + 0.9;
+    const g = new PlaneGeometry(cw, ch, 24, 1);
+    const pos = g.attributes.position;
+    for (let i = 0; i < pos.count; i += 1) pos.setZ(i, Math.sin((pos.getX(i) / cw) * Math.PI * 7) * 0.05);
+    g.computeVertexNormals();
+    const curtain = new Mesh(g, new MeshStandardMaterial({ color: "#efe9df", roughness: 0.95, transparent: true, opacity: 0.82, side: 2, envMapIntensity: 0.4 }));
+    curtain.position.set(WIN.x0 + 0.2, (WIN.y0 + WIN.y1) / 2 + 0.25, WALL_Z + 0.2);
+    group.add(curtain);
+    artMeshes.push(curtain);
+  }
+  const viewCache = {};
+  const viewFor = (name) => (viewCache[name] ??= own(windowView(name)));
+
+  // Beside the plant: a small stack of design books.
+  const stack = { x: -4.6, z: 0.55, ry: 0.3 }; // beside the notebook
+  const stackAt = (dx, dy, dz) => {
+    const c = Math.cos(stack.ry);
+    const sn = Math.sin(stack.ry);
+    return [stack.x + dx * c + dz * sn, dy, stack.z - dx * sn + dz * c];
+  };
+  [
+    { w: 1.35, d: 1.0, t: 0.13, cover: "#2f3b3b", rot: 0, dx: 0, dz: 0 },
+    { w: 1.2, d: 0.9, t: 0.11, cover: "#c8653b", rot: -0.12, dx: 0.04, dz: 0.03 },
+    { w: 1.05, d: 0.78, t: 0.1, cover: "#e9e3d6", rot: 0.1, dx: -0.03, dz: -0.02 },
+  ].reduce((y, b) => {
+    const r = stack.ry + b.rot;
+    matte.push(part(new RoundedBoxGeometry(b.w - 0.03, b.t - 0.02, b.d - 0.04, 1, 0.004), { position: stackAt(b.dx + 0.01, y + b.t / 2, b.dz), rotation: [0, r, 0], color: "#f3eee2" })); // pages
+    matte.push(part(new RoundedBoxGeometry(b.w, 0.014, b.d, 1, 0.005), { position: stackAt(b.dx, y + 0.007, b.dz), rotation: [0, r, 0], color: b.cover }));
+    matte.push(part(new RoundedBoxGeometry(b.w, 0.014, b.d, 1, 0.005), { position: stackAt(b.dx, y + b.t - 0.007, b.dz), rotation: [0, r, 0], color: b.cover }));
+    matte.push(part(new RoundedBoxGeometry(0.03, b.t, b.d, 1, 0.008), { position: stackAt(b.dx - b.w / 2 + 0.015, y + b.t / 2, b.dz), rotation: [0, r, 0], color: b.cover })); // spine
+    return y + b.t;
+  }, 0);
+
+  // Bookshelf speaker between the laptop and the monitor.
+  const spk = { x: 1.05, z: -3.45, ry: -0.25, w: 0.55, h: 0.85, d: 0.55 };
+  matte.push(part(new RoundedBoxGeometry(spk.w, spk.h, spk.d, 2, 0.04), { position: [spk.x, spk.h / 2 + 0.06, spk.z], rotation: [0, spk.ry, 0], color: "#16171a" }));
+  matte.push(part(new CylinderGeometry(0.2, 0.22, 0.06, n(20)), { position: [spk.x, 0.03, spk.z], color: "#2a2b2f" })); // isolation pad
+  const spkFront = (dy, r, color, depth) => {
+    const g = new CylinderGeometry(r, r, depth, n(28));
+    g.rotateX(Math.PI / 2);
+    g.translate(0, 0, spk.d / 2);
+    return part(g, { position: [spk.x, spk.h / 2 + 0.06 + dy, spk.z], rotation: [0, spk.ry, 0], color });
+  };
+  gloss.push(spkFront(-0.12, 0.17, "#2e3036", 0.02)); // woofer
+  metal.push(spkFront(-0.12, 0.05, "#9a9ca3", 0.03)); // dust cap
+  gloss.push(spkFront(0.24, 0.06, "#3a3c42", 0.02)); // tweeter
+
   const finish = (list, options) => {
     // ExtrudeGeometry is non-indexed; merging needs one layout for all parts.
     const indexed = list.map((g) => (g.index ? g : mergeVertices(g)));
@@ -1116,11 +1399,120 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   ];
   props.forEach((mesh) => group.add(mesh));
 
+  /* ---- Slat wall (one draw call) ---- */
+  const slatParts = [];
+  let slatIndex = 0;
+  for (let x = SLAT.x0; x <= SLAT.x1; x += SLAT.w + SLAT.gap, slatIndex += 1) {
+    if (x + SLAT.w / 2 > WIN.x0 - 0.12 && x - SLAT.w / 2 < WIN.x1 + 0.12) continue; // the window
+    const g = new BoxGeometry(SLAT.w, SLAT.h, SLAT.d, 1, isMobile ? 10 : 18, 1);
+    // Grain runs along the slat; each slat starts at another spot of the veneer.
+    const uv = g.attributes.uv;
+    const off = (slatIndex * 0.137) % 1;
+    for (let i = 0; i < uv.count; i += 1) uv.setXY(i, uv.getY(i) * 0.4 + off * 3, off + uv.getX(i) * 0.06);
+    g.translate(x, SLAT.h / 2, WALL_Z + SLAT.d / 2);
+    slatParts.push(g);
+  }
+  const slatGeo = mergeGeometries(slatParts, false);
+  slatParts.forEach((g) => g.dispose());
+  slatGeo.setAttribute("color", new Float32BufferAttribute(new Float32Array(slatGeo.attributes.position.count * 3), 3));
+  const slats = new Mesh(slatGeo, new MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
+  group.add(slats);
+  // Light on the slats, computed once per theme into the vertex colours:
+  // a dim room, plus the neon, the lamp and the monitor glowing on them.
+  const monCenter = new Vector3(...monAt(0, mon.y + mon.h / 2, 0));
+  const lightSlats = (key) => {
+    const night = key === "dark";
+    const lamps = night
+      ? [
+          { at: neonAt, color: new Color("#7c74ff"), k: 1.5, r: 2.8 },
+          { at: bulbAt, color: new Color("#ffb36b"), k: 1.25, r: 3.4 },
+          { at: monCenter, color: new Color("#4d6bff"), k: 0.8, r: 3.8 },
+          { at: new Vector3(winCx, 2.6, WALL_Z + 0.4), color: new Color("#6f86ff"), k: 0.5, r: 3.6 },
+        ]
+      : [
+          { at: new Vector3(-9, 5, 2), color: new Color("#fff3e2"), k: 0.35, r: 16 },
+          { at: new Vector3(winCx, 2.6, WALL_Z + 0.4), color: new Color("#fff6ea"), k: 0.55, r: 5 },
+        ];
+    const pos = slatGeo.attributes.position;
+    const nor = slatGeo.attributes.normal;
+    const col = slatGeo.attributes.color;
+    const v = new Vector3();
+    for (let i = 0; i < pos.count; i += 1) {
+      v.fromBufferAttribute(pos, i);
+      const front = nor.getZ(i) > 0.5;
+      const fall = Math.min(1, v.y / (night ? 6 : 9));
+      let amb = night ? 0.2 * (1.2 - fall * 0.75) : 0.82 * (1.06 - fall * 0.3);
+      if (!front) amb *= 0.55; // slat sides sit in shadow
+      let r = amb;
+      let g = amb;
+      let b = amb;
+      for (const L of lamps) {
+        const f = L.k * Math.max(0, 1 - v.distanceTo(L.at) / L.r) ** 2 * (front ? 1 : 0.6);
+        r += L.color.r * f;
+        g += L.color.g * f;
+        b += L.color.b * f;
+      }
+      const foot = 0.55 + 0.45 * Math.min(1, v.y / 0.7); // darker where it meets the desk
+      col.setXYZ(i, r * foot, g * foot, b * foot);
+    }
+    col.needsUpdate = true;
+  };
+
+  /* ---- Live wall clock (hands follow the visitor's real time) ---- */
+  const clock = new Group();
+  const clockR = isMobile ? 0.34 : 0.36;
+  clock.position.set(isMobile ? 0.78 : 0.85, isMobile ? 1.35 : 2.55, WALL_Z + SLAT.d + 0.03);
+  const faceCanvas = makeCanvas(256, 256);
+  {
+    const c = faceCanvas.getContext("2d");
+    c.fillStyle = "#f4f2ec";
+    c.beginPath();
+    c.arc(128, 128, 128, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#1b1c20";
+    for (let i = 0; i < 60; i += 1) {
+      const a = (i / 60) * Math.PI * 2;
+      const big = i % 5 === 0;
+      c.save();
+      c.translate(128 + Math.sin(a) * 112, 128 - Math.cos(a) * 112);
+      c.rotate(a);
+      c.fillRect(big ? -3 : -1, -6, big ? 6 : 2, big ? 18 : 9);
+      c.restore();
+    }
+    c.font = `700 22px "Space Grotesk", ${FONT_UI}`;
+    c.textAlign = "center";
+    c.fillText("nk", 128, 182);
+  }
+  const clockFace = new Mesh(new CircleGeometry(clockR, n(48)), new MeshBasicMaterial({ map: own(toTexture(faceCanvas)), toneMapped: false }));
+  const clockRim = new Mesh(new TorusGeometry(clockR, 0.035, n(10), n(48)), new MeshStandardMaterial({ color: "#121316", roughness: 0.35, metalness: 0.6 }));
+  clockRim.position.z = 0.012;
+  const hand = (len, width, color, z) => {
+    const g = new BoxGeometry(width, len, 0.008);
+    g.translate(0, len / 2 - len * 0.16, z);
+    return new Mesh(g, new MeshBasicMaterial({ color, toneMapped: false }));
+  };
+  const hourHand = hand(clockR * 0.55, 0.035, "#141518", 0.01);
+  const minuteHand = hand(clockR * 0.82, 0.024, "#141518", 0.016);
+  const secondHand = hand(clockR * 0.9, 0.008, "#e0352b", 0.022);
+  clock.add(clockFace, clockRim, hourHand, minuteHand, secondHand);
+  group.add(clock);
+  let lastSecond = -1;
+  let lastMinute = -1;
+  const setClock = (now) => {
+    const sec = now.getSeconds();
+    const min = now.getMinutes() + sec / 60;
+    const hr = (now.getHours() % 12) + min / 60;
+    secondHand.rotation.z = -(sec / 60) * Math.PI * 2;
+    minuteHand.rotation.z = -(min / 60) * Math.PI * 2;
+    hourHand.rotation.z = -(hr / 12) * Math.PI * 2;
+  };
+  setClock(new Date());
+
   /* ---- Scanned models (lamp, plant): lit like the props ---- */
   const models = [];
   let lampLight = null; // the bulb's material: glows at night (flickers on)
   const gltfLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  const placeModel = (url, cfg, onMesh) =>
+  const placeModel = (url, cfg, onMesh, onLoad) =>
     gltfLoader
       .loadAsync(url)
       .then((gltf) => {
@@ -1130,20 +1522,50 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
         root.scale.setScalar(cfg.scale);
         root.traverse((obj) => obj.isMesh && onMesh?.(obj));
         group.add(root);
+        root.updateMatrixWorld(true);
+        onLoad?.(root);
         models.push(root);
         tint(themeKey);
         onChange?.();
       })
-      .catch(() => {});
-  placeModel(lampUrl, LAMP, (mesh) => {
-    if (mesh.material.name?.endsWith("_light")) {
-      lampLight = mesh.material;
-      lampLight.emissive = new Color("#ffcf94");
+      .catch((error) => console.warn("desk model:", error));
+  placeModel(
+    plantUrl,
+    PLANT,
+    (mesh) => {
+      mesh.material.envMapIntensity = 0.6;
+    },
+    (root) => {
+      // The scanned plant stands in a slim, tall white ceramic vase (its
+      // scanned pot and soil are hidden); the plant is lifted to the vase mouth.
+      let potMesh = null;
+      root.traverse((obj) => {
+        if (!obj.isMesh) return;
+        if (/_pot$/i.test(obj.material.name)) potMesh = obj;
+        if (/dirt|soil/i.test(obj.name) || /dirt|soil/i.test(obj.material.name)) obj.visible = false;
+      });
+      if (!potMesh) return;
+      const box = new Box3().setFromObject(potMesh);
+      potMesh.visible = false;
+      const VASE = { r: 0.27, h: 0.95 };
+      root.position.y += VASE.h - (box.max.y - box.min.y) * 0.92;
+      // r × VASE.r, y × VASE.h: a gently swelling cylinder with a rolled lip
+      const profile = [[0, 0.004], [0.8, 0.004], [0.86, 0], [0.92, 0.02], [0.99, 0.25], [1.0, 0.62], [0.93, 0.9], [0.88, 0.975], [0.93, 0.995], [0.9, 1.0], [0.82, 0.985], [0.8, 0.9]];
+      const cx = (box.min.x + box.max.x) / 2;
+      const cz = (box.min.z + box.max.z) / 2;
+      const vase = new Mesh(
+        lathe(profile.map(([x, y]) => [x * VASE.r, y * VASE.h]), n(56)),
+        new MeshStandardMaterial({ color: "#e6dccb", roughness: 0.55, metalness: 0, envMapIntensity: 1 })
+      );
+      vase.position.set(cx, 0, cz);
+      // dark inside of the mouth
+      const mouth = new Mesh(new CircleGeometry(VASE.r * 0.8, n(32)), new MeshBasicMaterial({ color: "#1a1410", toneMapped: false }));
+      mouth.rotation.x = -Math.PI / 2;
+      mouth.position.set(cx, VASE.h * 0.9, cz);
+      group.add(vase, mouth);
+      models.push(vase);
     }
-  });
-  placeModel(plantUrl, PLANT, (mesh) => {
-    mesh.material.envMapIntensity = 0.6;
-  });
+  );
 
   /* ---- Mug print: a textured sleeve hugging the mug's outer wall ---- */
   // Circumference ≈ 2π·0.356 ≈ 2.24 vs 0.64 tall → a 1024×292 canvas.
@@ -1167,7 +1589,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   const printTexture = own(toTexture(printCanvas));
   printTexture.anisotropy = anisotropy;
   // Centre the quote toward the camera's side, away from the handle (+x).
-  const facing = MathUtils.degToRad(-8);
+  const facing = MathUtils.degToRad(36); // the quote faces the camera from the mug's spot
   const sleeve = new Mesh(
     new CylinderGeometry(0.3612, 0.3527, 0.64, n(64), 1, true, facing - Math.PI, Math.PI * 2),
     new MeshStandardMaterial({ map: printTexture, roughness: 0.2, metalness: 0, envMapIntensity: 0.9 })
@@ -1217,9 +1639,21 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     [-1.45, 1.85, 0.2, 1],
     [-0.85, 2.15, -0.14, 2],
   ].forEach(([x, z, r, i], k) => {
-    addDetail("notes", part(atlasUV(new PlaneGeometry(0.62, 0.62), REGION.notes[i], ATLAS_W, ATLAS_H), { position: [x, 0.004 + k * 0.001, z], rotation: [-Math.PI / 2, 0, r], color: "#ffffff" }));
+    addDetail("notes", part(atlasUV(new PlaneGeometry(0.62, 0.62), REGION.notes[i], ATLAS_W, ATLAS_H), { position: [x, MAT_TOP + 0.004 + k * 0.001, z], rotation: [-Math.PI / 2, 0, r], color: "#ffffff" }));
   });
 
+  {
+    const bulbGeometry = new SphereGeometry(0.12, n(14), n(10));
+    const [bx, by, bw, bh] = REGION.bulb;
+    const bulbUV = bulbGeometry.attributes.uv;
+    for (let i = 0; i < bulbUV.count; i += 1) bulbUV.setXY(i, (bx + bw / 2) / ATLAS_W, 1 - (by + bh / 2) / ATLAS_H);
+    addDetail("bulb", part(bulbGeometry, { position: bulbAt.toArray(), color: "#ffffff" }));
+    // inside of the shade, lit by the bulb (faces inward)
+    const glowGeo = lathe([[0, 0.405], [0.1, 0.4], [0.105, 0.295], [0.115, 0.278], [0.19, 0.252], [0.27, 0.192], [0.32, 0.115], [0.343, 0.03], [0.346, 0.004]], n(48));
+    for (let i = 0; i < glowGeo.attributes.uv.count; i += 1) glowGeo.attributes.uv.setXY(i, (bx + bw / 2) / ATLAS_W, 1 - (by + bh / 2) / ATLAS_H);
+    orient(glowGeo, shadeAt, new Vector3(0, -1, 0), shadeDir);
+    addDetail("shade", part(glowGeo, { color: "#ffffff" }));
+  }
   const detailsGeometry = mergeGeometries(detailParts, false);
   detailParts.forEach((g) => g.dispose());
   const details = new Mesh(detailsGeometry, new MeshBasicMaterial({ map: atlas, vertexColors: true, toneMapped: false }));
@@ -1250,6 +1684,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     [...xz(monAt(0, 0, -0.15)), 2.1, 1.5, mon.ry, 1],
     [...xz(monAt(0, 0, 0.35)), mon.w + 0.6, 0.9, mon.ry, 1],
     [mouse.x, mouse.z, 0.55, 0.85, mouse.ry, 0.9],
+    [stack.x, stack.z, 1.7, 1.35, stack.ry, 0.85],
     [...xz(kbAt(0, 0, 0)), 2.6, 1.0, kb.ry, 0.75],
     [MAT.x, MAT.z, MAT.w + 0.25, MAT.d + 0.25, 0, 0.35],
     // tight ambient occlusion right at the contact points
@@ -1439,7 +1874,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   return {
     group,
     /** Light-blocking props (dev export for the Blender light bake). */
-    casters: () => [...props, sleeve, ...models],
+    casters: () => [...props, sleeve, keys, ...models],
     /** Paint the theme onto the wall, the desk plane and the details. */
     applyTheme: (name, deskMaterial, deskPlane, sheenMaterial) => {
       const key = PALETTE[name] ? name : "dark";
@@ -1471,13 +1906,27 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
           onChange?.();
         });
       }
+      lightSlats(key);
+      view.material.map = viewFor(key);
+      view.material.needsUpdate = true;
+      slats.material.color.set(PALETTE[key].wood.light);
+      slats.material.map = null;
+      slats.material.needsUpdate = true;
+      scannedTex(wood.map, true).then((texture) => {
+        if (themeKey !== key || !texture) return;
+        slats.material.map = texture;
+        slats.material.color.set(wood.tint);
+        slats.material.needsUpdate = true;
+        onChange?.();
+      });
+      artMeshes.forEach((m) => m.userData.tint && m.material.color.setScalar(key === "dark" ? 0.82 : 0.97));
       // Painted fallback first; the baked maps swap in once loaded.
       const fallback = lightFor(key, deskPlane.size, deskPlane.centerZ);
       fallback.channel = 0;
       deskMaterial.lightMap = fallback;
       deskMaterial.lightMapIntensity = Math.PI; // basic material: lightMap × π⁻¹
       deskMaterial.needsUpdate = true;
-      mat.material.color.set(key === "dark" ? "#34353c" : "#45464d");
+      mat.material.color.set("#34353c");
       mat.material.lightMap = null;
       mat.material.needsUpdate = true;
       wall.material.lightMap = null;
@@ -1508,7 +1957,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
         sheenMaterial.opacity = key === "dark" ? 0.55 : 0.3;
         sheenMaterial.needsUpdate = true;
       }
-      edgeMaterial.color.set(PALETTE[key].wood.base).multiplyScalar(key === "dark" ? 0.7 : 0.85);
+      edgeMaterial.color.set(PALETTE[key].wood.base).multiplyScalar(0.7);
       shadows.material.opacity = PALETTE[key].shadow;
       steamMaterial.opacity = key === "dark" ? 0.26 : 0.4;
       tint(key);
@@ -1534,6 +1983,23 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
         tint(themeKey);
         changed = true;
       }
+      // Live time: the wall clock every second, the phone every minute.
+      if (onDesk) {
+        const now = new Date();
+        if (now.getSeconds() !== lastSecond) {
+          lastSecond = now.getSeconds();
+          setClock(now);
+          changed = true;
+        }
+        if (now.getMinutes() !== lastMinute) {
+          if (lastMinute !== -1) {
+            drawPhone(atlasCtx, image.complete && image.naturalWidth ? image : null);
+            atlas.needsUpdate = true;
+          }
+          lastMinute = now.getMinutes();
+          changed = true;
+        }
+      }
       if (!onDesk || reduced) return caretVisible(true) || changed;
       if (caretVisible(Math.floor(t / 0.55) % 2 === 0)) changed = true;
       if (time - life.steamAt >= 1 / 24) {
@@ -1545,7 +2011,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     },
     dispose: () => {
       textures.forEach((texture) => texture.dispose());
-      [wall, neon, mat, ...props, sleeve, details, shadows, glows, steam, caret, edge].forEach((mesh) => {
+      [wall, neon, mat, slats, view, keys, ...artMeshes, clockFace, clockRim, hourHand, minuteHand, secondHand, ...props, sleeve, details, shadows, glows, steam, caret, edge].forEach((mesh) => {
         mesh.geometry.dispose();
         mesh.material.dispose();
       });

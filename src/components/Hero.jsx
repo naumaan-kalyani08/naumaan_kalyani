@@ -33,7 +33,7 @@ const POKES = [
 // Floating windows around the main one. `depth` is their resting translateZ.
 const PANES = [
   { id: "work", href: "#work", kicker: "Selected work", title: "Case studies", arrow: "→", pose: "laptop", say: "Here’s what I’ve been building.", depth: 150 },
-  { id: "stack", href: "#skills", kicker: "Stack", title: "React · Laravel · GSAP · three.js", pose: "idea", say: "I nerd out on these.", depth: 90 },
+  { id: "stack", href: "#skills", kicker: "Stack", title: "React · Vue · Laravel · FastAPI", pose: "idea", say: "I nerd out on these.", depth: 90 },
   { id: "about", href: "#about", kicker: "About", title: "Who’s behind the code", arrow: "→", pose: "smile", say: "That’s me!", depth: 120 },
   { id: "contact", href: "#contact", kicker: "Say hi", title: "Start a project", arrow: "↗", pose: "call", say: "Call me, maybe? 🤙", depth: 170 },
 ];

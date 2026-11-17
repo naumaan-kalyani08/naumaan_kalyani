@@ -38,6 +38,76 @@
   user-select: none;
 }
 
+/* "Drag the globe" hint — sits in the empty space over the globe. */
+.globe-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  height: 40px;
+  padding: 0 16px 0 6px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(6px);
+  transition: color 0.25s ease, border-color 0.25s ease, opacity 0.6s ease;
+}
+
+.globe-hint:hover,
+.globe-hint:focus-visible {
+  color: var(--text);
+  border-color: var(--accent-2);
+  border-style: solid;
+}
+
+.globe-hint__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--gradient);
+  color: #fff;
+}
+
+.globe-hint__icon svg {
+  animation: globe-hint-sway 2.4s var(--ease-out) infinite;
+}
+
+.globe-hint__text {
+  animation: globe-hint-in 0.5s var(--ease-out);
+}
+
+/* Once they've found it, the hint steps back. */
+.globe-hint.is-done {
+  opacity: 0.7;
+}
+
+.globe-hint.is-done .globe-hint__icon svg {
+  animation: none;
+}
+
+@keyframes globe-hint-sway {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  60% { transform: translateX(3px); }
+}
+
+@keyframes globe-hint-in {
+  from { opacity: 0; transform: translateY(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globe-hint__icon svg,
+  .globe-hint__text {
+    animation: none;
+  }
+}
+
 .contact.globe-drag :is(p, h2, h3, li, .contact__col, .site-footer, .cform) {
   cursor: auto;
 }

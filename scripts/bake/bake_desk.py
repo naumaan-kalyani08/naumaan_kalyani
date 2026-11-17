@@ -175,7 +175,7 @@ def clear_lights():
 
 # Lamp geometry (mirrors deskSetup.js).
 # The scanned lamp's bulb, world space (mirrors `bulbAt` in deskSetup.js).
-bulb = Vector((-2.91, 1.62, -2.03))  # just below the bulb mesh, inside the shade
+bulb = Vector((-2.37, 1.84, -1.63))  # the code-made lamp's bulb, inside its shade
 
 # Monitor (mirrors deskSetup.js `mon`).
 mon = dict(x=3.5, z=-2.75, ry=-0.36, w=4.3, h=2.45, y=0.62)
