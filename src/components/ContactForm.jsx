@@ -7,12 +7,14 @@ import "../style/ContactForm.css";
 /*
  * Project enquiry form.
  *
- * Delivery: set VITE_CONTACT_ENDPOINT (e.g. a Formspree form URL,
- * https://formspree.io/f/xxxxxxx) in .env — the form then POSTs JSON there.
+ * Delivery: Web3Forms (https://web3forms.com). Set VITE_WEB3FORMS_KEY in .env
+ * to the access key Web3Forms emails you; each submission is then emailed to
+ * you. The key is public by design (it can only send mail to your inbox).
  * Without it, "Send" opens the visitor's mail app with everything pre-filled
- * (addressed to profile.email), so the form still works on a static host.
+ * (addressed to profile.email), so the form still works.
  */
-const ENDPOINT = import.meta.env.VITE_CONTACT_ENDPOINT;
+const ACCESS_KEY = import.meta.env.VITE_WEB3FORMS_KEY;
+const ENDPOINT = "https://api.web3forms.com/submit";
 const TOPICS = ["Website", "Web app", "3D / animation", "Something else"];
 const BUDGETS = ["< $1k", "$1k – $5k", "$5k – $10k", "$10k +"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -90,7 +92,7 @@ export default function ContactForm() {
     }
     if (values.company) return; // honeypot: bots fill hidden fields
 
-    if (!ENDPOINT) {
+    if (!ACCESS_KEY) {
       openMail();
       setStatus("mailto");
       return;
@@ -102,15 +104,18 @@ export default function ContactForm() {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
+          access_key: ACCESS_KEY,
+          subject: `${values.topic} enquiry from ${values.name.trim()}`,
+          from_name: "Portfolio contact form",
           name: values.name.trim(),
           email: values.email.trim(),
           topic: values.topic,
-          budget: values.budget,
+          budget: values.budget || "Not specified",
           message: values.message.trim(),
-          _subject: `${values.topic} enquiry from ${values.name.trim()}`,
         }),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || `HTTP ${response.status}`);
       setStatus("sent");
       setValues((v) => ({ ...v, message: "" }));
       setTouched({});

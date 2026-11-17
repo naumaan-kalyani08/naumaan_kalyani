@@ -1,0 +1,159 @@
+/* ==========================================================================
+   Interactive globe (cobe) — sits in the contact form's intro column.
+   ========================================================================== */
+
+.globe {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  aspect-ratio: 1;
+  margin-top: 12px;
+  isolation: isolate;
+}
+
+/* Soft halo behind the sphere, tuned per theme via tokens. */
+.globe::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(99 102 241 / 0.28), transparent 70%);
+  filter: blur(30px);
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+:root[data-theme="light"] .globe::before {
+  background: radial-gradient(circle, rgb(79 70 229 / 0.16), transparent 70%);
+}
+
+.globe__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: pan-y; /* horizontal drag spins, vertical still scrolls */
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 1.2s ease, transform 1.4s var(--ease-out);
+}
+
+.globe.is-ready .globe__canvas,
+.globe.is-ready::before {
+  opacity: 1;
+  transform: none;
+}
+
+.globe.is-dragging .globe__canvas {
+  cursor: grabbing;
+}
+
+.globe.is-failed {
+  display: none;
+}
+
+/* ---------- City label, anchored to the "home" marker ---------- */
+.globe__pin {
+  display: none;
+}
+
+@supports (position-anchor: --a) {
+  .globe__pin {
+    position: absolute;
+    position-anchor: --cobe-home;
+    bottom: anchor(top);
+    left: anchor(center);
+    translate: -50% -10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+    opacity: var(--cobe-visible-home, 0);
+    filter: blur(calc((1 - var(--cobe-visible-home, 0)) * 6px));
+    transition: opacity 0.35s ease, filter 0.35s ease;
+  }
+}
+
+.globe__pin-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 0 0 var(--accent-2);
+  animation: globe-ping 2s ease-out infinite;
+}
+
+@keyframes globe-ping {
+  0% { box-shadow: 0 0 0 0 rgb(95 214 246 / 0.6); }
+  100% { box-shadow: 0 0 0 9px rgb(95 214 246 / 0); }
+}
+
+/* ---------- HUD ---------- */
+.globe__hud {
+  position: absolute;
+  left: 50%;
+  bottom: 2%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.globe__hint {
+  color: var(--muted-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.globe__home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+.globe__home:hover,
+.globe__home:focus-visible {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
+@media (max-width: 900px) {
+  .globe {
+    max-width: 340px;
+    margin-inline: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globe__canvas,
+  .globe::before {
+    transition: none;
+  }
+  .globe__pin-dot {
+    animation: none;
+  }
+}

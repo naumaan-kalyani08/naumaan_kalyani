@@ -3,6 +3,8 @@ import {
   BoxGeometry,
   CanvasTexture,
   CatmullRomCurve3,
+  ClampToEdgeWrapping,
+  TextureLoader,
   Color,
   TubeGeometry,
   Euler,
@@ -19,6 +21,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NormalBlending,
   PlaneGeometry,
   Quaternion,
   RepeatWrapping,
@@ -29,7 +32,15 @@ import {
 } from "three";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import memojiUrl from "../assets/memoji/smile.png?url";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import lampUrl from "../assets/models/desk-lamp.glb?url";
+import plantUrl from "../assets/models/desk-plant.glb?url";
+import walnutUrl from "../assets/wood/walnut.webp";
+import walnutNormalUrl from "../assets/wood/walnut-normal.webp";
+import oakUrl from "../assets/wood/oak.webp";
+import oakNormalUrl from "../assets/wood/oak-normal.webp";
+import memojiUrl from "../assets/memoji/smile.webp?url";
 
 /*
  * The workspace around the laptop: a back wall (window, shelf, neon sign or
@@ -52,8 +63,39 @@ import memojiUrl from "../assets/memoji/smile.png?url";
 const WALL_Z = -4.2;
 const WALL_W = 24;
 const WALL_H = 12;
-const LAMP_SPOT = { x: -2.05, z: -0.95 }; // where the lamp's light lands on the desk
+const LAMP_SPOT = { x: -2.9, z: -1.9 }; // where the lamp's light lands on the desk
 const MONITOR_GLOW = { x: 2.7, z: -1.3 }; // the monitor's light spill on the desk (night)
+/*
+ * Baked lighting (Blender → scripts/bake/bake_desk.py): soft shadows, bounce
+ * light, the lamp's pool and the monitor's glow, stored as lightmaps for the
+ * desk top (+ mat) and the wall. The regions must match the bake script.
+ * Stored value = irradiance / RANGE (sRGB-encoded). Loaded after the scene
+ * shows; until then (or if missing) the painted fallbacks are used.
+ */
+const BAKE = {
+  range: 2,
+  desk: { x0: -7.5, x1: 7.5, z0: -4.2, z1: 3 },
+  wall: { x0: -7.5, x1: 7.5, y0: 0, y1: 6 },
+};
+const BAKED = import.meta.glob("../assets/bake/*.webp", { eager: true, import: "default" });
+
+// Second UV set (channel 1) mapping a mesh's world position into a bake region.
+function bakeUV(mesh, toUV) {
+  mesh.updateMatrix();
+  const p = mesh.geometry.attributes.position;
+  const uv = new Float32Array(p.count * 2);
+  const v = new Vector3();
+  for (let i = 0; i < p.count; i += 1) {
+    v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrix);
+    const [a, b] = toUV(v);
+    uv[i * 2] = a;
+    uv[i * 2 + 1] = b;
+  }
+  mesh.geometry.setAttribute("uv1", new Float32BufferAttribute(uv, 2));
+}
+const deskUV = (v) => [(v.x - BAKE.desk.x0) / (BAKE.desk.x1 - BAKE.desk.x0), (BAKE.desk.z1 - v.z) / (BAKE.desk.z1 - BAKE.desk.z0)];
+const wallUV = (v) => [(v.x - BAKE.wall.x0) / (BAKE.wall.x1 - BAKE.wall.x0), (v.y - BAKE.wall.y0) / (BAKE.wall.y1 - BAKE.wall.y0)];
+
 /** Felt desk mat under the laptop (and phone/mouse): its top is at MAT_TOP. */
 export const MAT_TOP = 0.012;
 const MAT = { x: 0.5, z: 0.15, w: 4.9, d: 2.8 };
@@ -379,34 +421,7 @@ function wallTexture(name, width) {
   // Out of focus: the camera is focused on the laptop.
   softBlur(canvas, 2);
 
-  // Neon sign (night), drawn after the blur: a light source stays bright
-  // and glowing even out of focus.
-  if (night) {
-    const nx = X(0.1);
-    const ny = Y(3.55);
-    ctx.font = `700 ${Math.round(1.25 * u)}px "Space Grotesk", system-ui, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.shadowColor = "rgba(129,140,248,1)";
-    ctx.shadowBlur = u * 0.9;
-    ctx.strokeStyle = "rgba(165,180,252,1)";
-    ctx.lineWidth = u * 0.07;
-    ctx.strokeText("nk", nx, ny);
-    ctx.shadowBlur = u * 0.35;
-    ctx.strokeStyle = "#eef0ff";
-    ctx.lineWidth = u * 0.035;
-    ctx.strokeText("nk", nx, ny);
-    ctx.shadowBlur = 0;
-    const halo = ctx.createRadialGradient(nx, ny, 0, nx, ny, u * 2.2);
-    halo.addColorStop(0, "rgba(99,102,241,0.28)");
-    halo.addColorStop(1, "rgba(99,102,241,0)");
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, width, height);
-    ctx.globalCompositeOperation = "source-over";
-  }
+  // (The neon "nk" sign is its own sharp mesh: see neonTexture.)
 
 
   // Sides dissolve into the page colour (no hard wall edge at any aspect).
@@ -420,6 +435,52 @@ function wallTexture(name, width) {
     ctx.fillStyle = side;
     ctx.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), height);
   }
+  return toTexture(canvas);
+}
+
+/* ------------------------------------------------------------ neon sign */
+
+// The "nk" neon sign on the wall: its own high-res texture (not part of the
+// blurred wall), so the tubes stay crisp. Night: glowing white-violet tubes
+// with a halo. Day: the same tubes lit, with a softer coloured glow that
+// still reads against the light wall.
+const NEON = { x: -0.9, y: 1.48, w: 3.2, h: 1.8 };
+
+function neonTexture(name, width) {
+  const height = Math.round((width * NEON.h) / NEON.w);
+  const canvas = makeCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  const u = width / NEON.w; // px per world unit
+  const night = name === "dark";
+  const cx = width / 2;
+  const cy = height / 2;
+
+  // halo on the wall behind the tubes
+  const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, height * 0.5);
+  halo.addColorStop(0, night ? "rgba(99,102,241,0.34)" : "rgba(99,102,241,0.16)");
+  halo.addColorStop(1, "rgba(99,102,241,0)");
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.font = `700 ${Math.round(1.1 * u)}px "Space Grotesk", system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  // outer glow
+  ctx.shadowColor = night ? "rgba(129,140,248,1)" : "rgba(99,102,241,0.9)";
+  ctx.shadowBlur = u * (night ? 0.35 : 0.22);
+  ctx.strokeStyle = night ? "rgba(165,180,252,1)" : "#7c83f5";
+  ctx.lineWidth = u * 0.075;
+  ctx.strokeText("nk", cx, cy);
+  ctx.strokeText("nk", cx, cy); // twice: a denser glow
+  // hot white core of the tube
+  ctx.shadowBlur = u * 0.08;
+  ctx.shadowColor = night ? "rgba(199,210,254,1)" : "rgba(129,140,248,0.8)";
+  ctx.strokeStyle = night ? "#f4f5ff" : "#eef0ff";
+  ctx.lineWidth = u * 0.032;
+  ctx.strokeText("nk", cx, cy);
+  ctx.shadowBlur = 0;
   return toTexture(canvas);
 }
 
@@ -779,7 +840,7 @@ function drawAtlas(ctx, memoji) {
 
 /* ------------------------------------------------------------- the setup */
 
-export function createDeskSetup({ isMobile, reduced = false, renderer, onChange, edgeZ = 3 }) {
+export function createDeskSetup({ isMobile, reduced = false, renderer, onChange, edgeZ = 3, deskMesh = null }) {
   const group = new Group();
   const textures = new Set();
   const own = (texture) => {
@@ -795,6 +856,76 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   const wall = new Mesh(new PlaneGeometry(WALL_W, WALL_H), new MeshBasicMaterial({ toneMapped: false }));
   wall.position.set(0, WALL_H / 2, WALL_Z);
   group.add(wall);
+  bakeUV(wall, wallUV);
+  if (deskMesh) bakeUV(deskMesh, deskUV);
+
+  // Scanned wood textures (cached per url).
+  const WOOD = {
+    dark: { map: walnutUrl, normal: walnutNormalUrl, tint: "#b98463" },
+    light: { map: oakUrl, normal: oakNormalUrl, tint: "#ffffff" },
+  };
+  const scannedCache = {};
+  const scannedTex = (url, color) =>
+    (scannedCache[url] ??= new Promise((resolve) => {
+      new TextureLoader().load(
+        url,
+        (texture) => {
+          if (color) texture.colorSpace = SRGBColorSpace;
+          texture.wrapS = texture.wrapT = RepeatWrapping;
+          texture.repeat.set(4, 4); // one veneer sheet ≈ 6 units (≈ 60 cm)
+          texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+          resolve(own(texture));
+        },
+        undefined,
+        () => resolve(null)
+      );
+    }));
+
+  // Baked lightmaps, loaded on demand per theme (cached).
+  const bakedCache = {};
+  const loader = new TextureLoader();
+  const baked = (name) =>
+    (bakedCache[name] ??= new Promise((resolve) => {
+      const url = BAKED[`../assets/bake/${name}.webp`];
+      if (!url) return resolve(null);
+      loader.load(
+        url,
+        (texture) => {
+          texture.colorSpace = SRGBColorSpace;
+          texture.channel = 1;
+          texture.wrapS = texture.wrapT = ClampToEdgeWrapping;
+          resolve(own(texture));
+        },
+        undefined,
+        () => resolve(null)
+      );
+    }));
+
+  // Neon "nk" sign: a sharp plane just off the wall, visible in every
+  // viewport (low on the wall, above the laptop) and in both themes.
+  const neonCache = {};
+  const neonFor = (name) => (neonCache[name] ??= own(neonTexture(name, isMobile ? 512 : 1024)));
+  const neon = new Mesh(
+    new PlaneGeometry(NEON.w, NEON.h),
+    new MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false })
+  );
+  // high on the wall: phones frame more wall, so it can sit higher there
+  neon.position.set(NEON.x, isMobile ? 2.25 : NEON.y, WALL_Z + 0.02);
+  neon.renderOrder = 1;
+  group.add(neon);
+  // The tubes are drawn in the brand face: redraw once it has loaded.
+  if (document.fonts && !document.fonts.check(`700 20px "Space Grotesk"`)) {
+    document.fonts.ready.then(() => {
+      Object.keys(neonCache).forEach((name) => {
+        textures.delete(neonCache[name]);
+        neonCache[name].dispose();
+        delete neonCache[name];
+      });
+      neon.material.map = neonFor(themeKey);
+      neon.material.needsUpdate = true;
+      onChange?.();
+    });
+  }
 
   // Desk wood (tiled) + baked light, applied to the scene's desk plane.
   const woodCache = {};
@@ -831,58 +962,18 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   const graphite = "#2b2d34";
   const steel = "#b9bcc4";
 
-  // Desk lamp (right, behind) — metal arms, lathed shade with a lip.
-  const lampBase = new Vector3(-3.15, 0.1, -2.4);
-  const elbow = new Vector3(-3.3, 1.95, -2.85);
-  const headAt = new Vector3(-2.4, 2.05, -1.7);
-  metal.push(part(lathe([[0, 0], [0.5, 0], [0.56, 0.03], [0.55, 0.08], [0.47, 0.11], [0.12, 0.13], [0, 0.13]], n(40)), { position: [lampBase.x, 0, lampBase.z], color: graphite }));
-  const brass = "#c9a24a";
-  metal.push(rod(lampBase, elbow, 0.036, graphite, n(16)));
-  metal.push(rod(elbow, headAt, 0.036, graphite, n(16)));
-  // brass joints: elbow knuckle, base collar, head swivel
-  metal.push(part(new SphereGeometry(0.075, n(18), n(14)), { position: elbow.toArray(), color: brass }));
-  metal.push(part(lathe([[0.075, 0], [0.085, 0.02], [0.085, 0.07], [0.06, 0.09]], n(24)), { position: [lampBase.x, 0.125, lampBase.z], color: brass }));
-  metal.push(part(new SphereGeometry(0.06, n(16), n(12)), { position: headAt.toArray(), color: brass }));
-  const shadeDir = new Vector3(LAMP_SPOT.x, 0, LAMP_SPOT.z).sub(headAt).normalize();
-  // profile runs inner-top → inner rim → outer rim → outer top, so the outside
-  // faces out and the inside (seen from below) faces in.
-  // Shade: one outward-facing shell (rim → crown → cap); its inside is the
-  // glowing detail surface below, and a thin brass ring finishes the rim.
-  const shadeAt = headAt.clone().addScaledVector(shadeDir, 0.3);
-  const shadeGeo = lathe([[0.42, 0], [0.3, 0.12], [0.16, 0.27], [0.11, 0.31], [0.06, 0.335], [0, 0.34]], n(48));
-  orient(shadeGeo, shadeAt, new Vector3(0, -1, 0), shadeDir);
-  metal.push(part(shadeGeo, { color: graphite }));
-  const rim = new TorusGeometry(0.42, 0.012, n(8), n(48));
-  rim.rotateX(Math.PI / 2);
-  orient(rim, shadeAt, new Vector3(0, -1, 0), shadeDir);
-  metal.push(part(rim, { color: brass }));
-
-  // Plant (far right) — glazed pot, curved leaves.
-  const plant = { x: -4.45, z: -1.75 };
-  gloss.push(part(lathe([[0, 0.02], [0.3, 0.02], [0.33, 0], [0.36, 0.04], [0.44, 0.74], [0.46, 0.79], [0.43, 0.81], [0.4, 0.76], [0.38, 0.7]], n(40)), { position: [plant.x, 0, plant.z], color: "#ece7de" }));
-  matte.push(part(new CylinderGeometry(0.385, 0.385, 0.02, n(28)), { position: [plant.x, 0.7, plant.z], color: "#1c130d" }));
-  for (let i = 0; i < 12; i += 1) {
-    const a = (i / 12) * Math.PI * 2 + rand() * 0.45;
-    const tilt = 0.18 + rand() * 0.4;
-    const len = 0.7 + rand() * 0.6;
-    const leaf = new SphereGeometry(0.5, n(12), n(14));
-    leaf.applyMatrix4(new Matrix4().makeScale(0.3, len * 1.7, 0.06));
-    // arch the leaf outward (z) and pinch the tip
-    const p = leaf.attributes.position;
-    for (let v = 0; v < p.count; v += 1) {
-      const t = (p.getY(v) / (len * 0.85) + 1) / 2; // 0 base → 1 tip
-      p.setX(v, p.getX(v) * (1 - t * 0.45));
-      p.setZ(v, p.getZ(v) + t * t * len * 0.35);
-    }
-    leaf.computeVertexNormals();
-    leaf.applyMatrix4(new Matrix4().makeTranslation(0, len * 0.82, 0));
-    part(leaf, {
-      position: [plant.x + Math.cos(a) * 0.08, 0.68, plant.z + Math.sin(a) * 0.08],
-      rotation: [Math.sin(a) * tilt, a + Math.PI / 2, -Math.cos(a) * tilt],
-      color: ["#4f8f5c", "#3d7a4b", "#5ea06b", "#46855a"][i % 4],
-    });
-    matte.push(leaf);
-  }
+  // Desk lamp + plant: real scanned models (Poly Haven, CC0), prepared for the
+  // web by scripts/bake/prep_models.py and loaded once the scene is up.
+  const LAMP = { x: -3.15, z: -2.4, ry: -2.5, scale: 2.35 };
+  const PLANT = { x: -4.45, z: -1.75, ry: 0.6, scale: 2.9 };
+  const lampBase = new Vector3(LAMP.x, 0, LAMP.z);
+  const plant = { x: PLANT.x, z: PLANT.z };
+  // The bulb (model space, metres, from prep_models.py) in world space.
+  const bulbAt = new Vector3(0.0138, 0.7717, -0.1882)
+    .multiplyScalar(LAMP.scale)
+    .applyAxisAngle(new Vector3(0, 1, 0), LAMP.ry)
+    .add(lampBase);
+  const shadeDir = new Vector3(0, -1, 0);
 
   // Mug — lathed ceramic with a real rim and inside, coffee, handle.
   const mug = { x: 2.85, z: -0.95 };
@@ -955,8 +1046,12 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   gloss.push(part(new RoundedBoxGeometry(mon.w, mon.h, 0.07, 3, 0.03), { position: monAt(0, mon.y + mon.h / 2, 0), rotation: [0, mon.ry, 0], color: "#0d0e12" }));
   matte.push(part(new RoundedBoxGeometry(mon.w * 0.62, mon.h * 0.62, 0.12, 2, 0.05), { position: monAt(0, mon.y + mon.h / 2, -0.07), rotation: [0, mon.ry, 0], color: "#1a1b20" }));
 
-  // Felt desk mat under the laptop, phone and mouse.
-  matte.push(part(new RoundedBoxGeometry(MAT.w, MAT_TOP, MAT.d, 2, 0.005), { position: [MAT.x, MAT_TOP / 2, MAT.z], color: "#26272c" }));
+  // Felt desk mat under the laptop, phone and mouse: unlit like the desk,
+  // so it takes the same baked light and shadows.
+  const mat = new Mesh(new RoundedBoxGeometry(MAT.w, MAT_TOP, MAT.d, 2, 0.005), new MeshBasicMaterial({ toneMapped: false }));
+  mat.position.set(MAT.x, MAT_TOP / 2, MAT.z);
+  group.add(mat);
+  bakeUV(mat, deskUV);
 
   // Magic Mouse (right of the laptop): a flattened glossy shell.
   const mouse = { x: 2.02, z: -0.42, ry: -0.2 };
@@ -1020,6 +1115,35 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     finish(metal, { roughness: 0.34, metalness: 0.85, envMapIntensity: 1 }),
   ];
   props.forEach((mesh) => group.add(mesh));
+
+  /* ---- Scanned models (lamp, plant): lit like the props ---- */
+  const models = [];
+  let lampLight = null; // the bulb's material: glows at night (flickers on)
+  const gltfLoader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  const placeModel = (url, cfg, onMesh) =>
+    gltfLoader
+      .loadAsync(url)
+      .then((gltf) => {
+        const root = gltf.scene;
+        root.position.set(cfg.x, 0, cfg.z);
+        root.rotation.y = cfg.ry;
+        root.scale.setScalar(cfg.scale);
+        root.traverse((obj) => obj.isMesh && onMesh?.(obj));
+        group.add(root);
+        models.push(root);
+        tint(themeKey);
+        onChange?.();
+      })
+      .catch(() => {});
+  placeModel(lampUrl, LAMP, (mesh) => {
+    if (mesh.material.name?.endsWith("_light")) {
+      lampLight = mesh.material;
+      lampLight.emissive = new Color("#ffcf94");
+    }
+  });
+  placeModel(plantUrl, PLANT, (mesh) => {
+    mesh.material.envMapIntensity = 0.6;
+  });
 
   /* ---- Mug print: a textured sleeve hugging the mug's outer wall ---- */
   // Circumference ≈ 2π·0.356 ≈ 2.24 vs 0.64 tall → a 1024×292 canvas.
@@ -1095,17 +1219,6 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   ].forEach(([x, z, r, i], k) => {
     addDetail("notes", part(atlasUV(new PlaneGeometry(0.62, 0.62), REGION.notes[i], ATLAS_W, ATLAS_H), { position: [x, 0.004 + k * 0.001, z], rotation: [-Math.PI / 2, 0, r], color: "#ffffff" }));
   });
-  const bulbGeometry = new SphereGeometry(0.12, n(14), n(10));
-  const [bx, by, bw, bh] = REGION.bulb;
-  const bulbUV = bulbGeometry.attributes.uv;
-  for (let i = 0; i < bulbUV.count; i += 1) bulbUV.setXY(i, (bx + bw / 2) / ATLAS_W, 1 - (by + bh / 2) / ATLAS_H);
-  addDetail("bulb", part(bulbGeometry, { position: headAt.clone().addScaledVector(shadeDir, 0.2).toArray(), color: "#ffffff" }));
-  // Inside of the shade (just inside the metal shell), lit by the bulb.
-  // runs downward (crown → rim) so it faces inward: seen only from inside
-  const glowGeo = lathe([[0, 0.325], [0.06, 0.322], [0.11, 0.298], [0.16, 0.258], [0.3, 0.108], [0.412, 0.004]], n(48));
-  for (let i = 0; i < glowGeo.attributes.uv.count; i += 1) glowGeo.attributes.uv.setXY(i, (bx + bw / 2) / ATLAS_W, 1 - (by + bh / 2) / ATLAS_H);
-  orient(glowGeo, headAt.clone().addScaledVector(shadeDir, 0.3), new Vector3(0, -1, 0), shadeDir);
-  addDetail("shade", part(glowGeo, { color: "#ffffff" }));
 
   const detailsGeometry = mergeGeometries(detailParts, false);
   detailParts.forEach((g) => g.dispose());
@@ -1178,7 +1291,6 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   gctx.fillStyle = gg;
   gctx.fillRect(0, 0, 64, 64);
   const glowTexture = own(toTexture(glowCanvas));
-  const bulbAt = headAt.clone().addScaledVector(shadeDir, 0.2);
   const faceCam = (at) => new Quaternion().setFromRotationMatrix(new Matrix4().lookAt(CAM0, at, new Vector3(0, 1, 0)));
   const glowSpecs = {
     bulb: { color: new Color("#ffb168").multiplyScalar(0.7), build: () => new PlaneGeometry(1.7, 1.7).applyMatrix4(new Matrix4().compose(bulbAt.clone().addScaledVector(shadeDir, 0.15), faceCam(bulbAt), new Vector3(1, 1, 1))) },
@@ -1311,6 +1423,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
       for (let i = start; i < start + count; i += 1) gc.setXYZ(i, c.r * scale, c.g * scale, c.b * scale);
     };
     glowPaint("bulb", lamp);
+    if (lampLight) lampLight.emissiveIntensity = night ? 3 * lamp : 0;
     glowPaint("monitor", 1);
     glowPaint("phone", life.wake);
     gc.needsUpdate = true;
@@ -1325,16 +1438,66 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
 
   return {
     group,
+    /** Light-blocking props (dev export for the Blender light bake). */
+    casters: () => [...props, sleeve, ...models],
     /** Paint the theme onto the wall, the desk plane and the details. */
     applyTheme: (name, deskMaterial, deskPlane, sheenMaterial) => {
       const key = PALETTE[name] ? name : "dark";
       themeKey = key;
       wall.material.map = wallFor(key);
       wall.material.needsUpdate = true;
+      neon.material.map = neonFor(key);
+      // night: light adds up (a glow); day: painted over the light wall
+      neon.material.blending = key === "dark" ? AdditiveBlending : NormalBlending;
+      neon.material.needsUpdate = true;
       deskMaterial.map = woodFor(key);
-      deskMaterial.lightMap = lightFor(key, deskPlane.size, deskPlane.centerZ);
+      // Scanned wood veneer (Poly Haven, CC0): walnut at night, white oak by
+      // day; the drawn wood shows until it has loaded.
+      const wood = WOOD[key];
+      scannedTex(wood.map, true).then((texture) => {
+        if (themeKey !== key || !texture) return;
+        deskMaterial.map = texture;
+        deskMaterial.color.set(wood.tint);
+        deskMaterial.needsUpdate = true;
+        onChange?.();
+      });
+      if (sheenMaterial) {
+        scannedTex(wood.normal, false).then((texture) => {
+          if (themeKey !== key || !texture) return;
+          sheenMaterial.bumpMap = null;
+          sheenMaterial.normalMap = texture;
+          sheenMaterial.normalScale.set(0.8, 0.8);
+          sheenMaterial.needsUpdate = true;
+          onChange?.();
+        });
+      }
+      // Painted fallback first; the baked maps swap in once loaded.
+      const fallback = lightFor(key, deskPlane.size, deskPlane.centerZ);
+      fallback.channel = 0;
+      deskMaterial.lightMap = fallback;
       deskMaterial.lightMapIntensity = Math.PI; // basic material: lightMap × π⁻¹
       deskMaterial.needsUpdate = true;
+      mat.material.color.set(key === "dark" ? "#34353c" : "#45464d");
+      mat.material.lightMap = null;
+      mat.material.needsUpdate = true;
+      wall.material.lightMap = null;
+      shadows.visible = true;
+      Promise.all([baked(`desk-${key}`), baked(`wall-${key}`)]).then(([deskMap, wallMap]) => {
+        if (themeKey !== key || !deskMap) return;
+        const k = Math.PI * BAKE.range;
+        for (const m of [deskMaterial, mat.material]) {
+          m.lightMap = deskMap;
+          m.lightMapIntensity = k;
+          m.needsUpdate = true;
+        }
+        if (wallMap) {
+          wall.material.lightMap = wallMap;
+          wall.material.lightMapIntensity = k;
+          wall.material.needsUpdate = true;
+        }
+        shadows.visible = false; // the bake has the real ones
+        onChange?.();
+      });
       if (sheenMaterial) {
         // Varnish (see introScene): grain bump, masked to the work area.
         sheenMaterial.bumpMap = woodFor(key);
@@ -1382,7 +1545,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     },
     dispose: () => {
       textures.forEach((texture) => texture.dispose());
-      [wall, ...props, sleeve, details, shadows, glows, steam, caret, edge].forEach((mesh) => {
+      [wall, neon, mat, ...props, sleeve, details, shadows, glows, steam, caret, edge].forEach((mesh) => {
         mesh.geometry.dispose();
         mesh.material.dispose();
       });

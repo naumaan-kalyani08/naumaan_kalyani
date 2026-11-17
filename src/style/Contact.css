@@ -10,11 +10,36 @@
   background: radial-gradient(ellipse at 50% 100%, rgb(99 102 241 / 0.18), transparent 60%);
 }
 
-.contact__canvas {
+/* Interactive globe behind the content — drag empty space to spin it. */
+.contact__globe.globe {
   position: absolute;
-  inset: 0;
+  top: clamp(40px, 6vw, 90px);
+  left: 50%;
   z-index: -1;
+  width: min(1080px, 105vw);
+  max-width: none;
+  margin: 0;
+  translate: -50% 0;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+:root[data-theme="light"] .contact__globe.globe {
   opacity: 0.85;
+}
+
+.contact.globe-drag {
+  cursor: grab;
+  touch-action: pan-y; /* horizontal swipes spin, vertical still scrolls */
+}
+
+.contact.is-globe-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.contact.globe-drag :is(p, h2, h3, li, .contact__col, .site-footer, .cform) {
+  cursor: auto;
 }
 
 .contact__inner {
@@ -187,7 +212,9 @@
     gap: 24px;
   }
 
-  .contact__canvas {
+  .contact__globe.globe {
+    top: 120px;
+    width: 140vw;
     opacity: 0.55;
   }
 

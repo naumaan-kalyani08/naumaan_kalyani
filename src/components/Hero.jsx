@@ -10,12 +10,12 @@ import "../style/Hero.css";
 gsap.registerPlugin(ScrambleTextPlugin);
 
 /* ---------- Memoji poses ----------
-   Every PNG in src/assets/memoji/ becomes a pose named after its file
-   (idea.png → "idea"). Drop in wave.png, laugh.png, … and they're picked up
+   Every WebP in src/assets/memoji/ becomes a pose named after its file
+   (idea.webp → "idea"). Drop in wave.webp, laugh.webp, … and they're picked up
    automatically; "wave" becomes the greeting pose when it exists. */
-const memojiFiles = import.meta.glob("../assets/memoji/*.png", { eager: true, import: "default" });
+const memojiFiles = import.meta.glob("../assets/memoji/*.webp", { eager: true, import: "default" });
 const POSES = Object.fromEntries(
-  Object.entries(memojiFiles).map(([path, url]) => [path.split("/").pop().replace(/\.png$/, ""), url])
+  Object.entries(memojiFiles).map(([path, url]) => [path.split("/").pop().replace(/\.webp$/, ""), url])
 );
 const DEFAULT_POSE = ["wave", "thumbs", "smile"].find((name) => POSES[name]) || Object.keys(POSES)[0];
 const START_POSE = POSES.laptop ? "laptop" : DEFAULT_POSE; // peeks over a MacBook — fits the laptop intro
@@ -107,8 +107,8 @@ export default function Hero() {
         return true;
       };
 
-      // A real wave: the hand of wave.png is its own layer, swung from the
-      // wrist. (Without wave.png, the whole memoji does a hello wiggle.)
+      // A real wave: the hand of wave.webp is its own layer, swung from the
+      // wrist. (Without wave.webp, the whole memoji does a hello wiggle.)
       const wave = () => {
         if (reduced) return;
         if (!hand) {
@@ -344,6 +344,8 @@ export default function Hero() {
                       width="512"
                       height="512"
                       decoding="async"
+                      // the opening pose first; the others quietly after
+                      fetchPriority={name === START_POSE || name === DEFAULT_POSE ? "high" : "low"}
                       draggable="false"
                     />
                   );

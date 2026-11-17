@@ -389,7 +389,7 @@ export function createScene(container, { isMobile, reduced = false }) {
     scene.add(sheen);
   }
   let dirty = true; // see update(): unchanged frames are not re-rendered
-  const workspace = createDeskSetup({ isMobile, reduced, renderer, edgeZ: EDGE_Z, onChange: () => (dirty = true) });
+  const workspace = createDeskSetup({ isMobile, reduced, renderer, edgeZ: EDGE_Z, deskMesh: desk, onChange: () => (dirty = true) });
   scene.add(workspace.group);
 
   // ---- Contact shadow (baked, two layers: soft spread + tight core) ----
@@ -721,6 +721,30 @@ export function createScene(container, { isMobile, reduced = false }) {
 
   // Opt-in perf readout (?introStats): draw calls, triangles, GPU resources
   // and the JS cost of update(), for comparing scene changes.
+  // Dev only (?exportDesk): the props + closed laptop as a GLB, the input of
+  // the Blender light bake (scripts/bake). Loaded on demand; never in normal use.
+  if (typeof location !== "undefined" && /[?&]exportDesk(&|$)/.test(location.search)) {
+    window.__exportDesk = async () => {
+      const { GLTFExporter } = await import("three/examples/jsm/exporters/GLTFExporter.js");
+      const root = new Group();
+      const plain = new MeshStandardMaterial({ color: 0xffffff });
+      workspace.casters().forEach((mesh) => root.add(mesh.clone()));
+      root.add(laptop.clone(true));
+      root.updateMatrixWorld(true);
+      const drop = [];
+      root.traverse((obj) => {
+        if (obj.isInstancedMesh || obj.isSprite) drop.push(obj);
+        else if (obj.isMesh) obj.material = plain;
+      });
+      drop.forEach((obj) => obj.parent.remove(obj));
+      const buffer = await new GLTFExporter().parseAsync(root, { binary: true });
+      const bytes = new Uint8Array(buffer);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(bin);
+    };
+  }
+
   const stats = typeof location !== "undefined" && /[?&]introStats(&|$)/.test(location.search) ? { ms: 0, n: 0 } : null;
   if (stats) {
     window.__introStats = () => ({

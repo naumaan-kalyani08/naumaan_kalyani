@@ -8,12 +8,23 @@ export const profile = {
   initials: "nk",
   role: "Full-stack Developer",
   city: "[YOUR CITY]", // TODO
+  coords: [19.076, 72.8777], // TODO: [latitude, longitude] of your city — the contact globe's "home" pin
   email: "[YOUR EMAIL]", // TODO
   site: "naumaan.dev", // TODO: your domain (shown in the laptop intro's address bar)
   available: true,
   tagline:
     "I build fast, animated and accessible web experiences — from pixel-perfect interfaces in React to robust back-ends in Laravel.",
 };
+
+// Cities the contact globe draws arcs to from profile.coords. Decorative
+// ("open to work worldwide") — swap in places that mean something to you.
+export const reach = [
+  { label: "London", coords: [51.5072, -0.1276] },
+  { label: "New York", coords: [40.7128, -74.006] },
+  { label: "Dubai", coords: [25.2048, 55.2708] },
+  { label: "Singapore", coords: [1.3521, 103.8198] },
+  { label: "Sydney", coords: [-33.8688, 151.2093] },
+];
 
 export const socials = [
   { label: "LinkedIn", href: "https://www.linkedin.com/" }, // TODO

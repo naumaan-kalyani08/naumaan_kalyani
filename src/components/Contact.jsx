@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
-import useThreeScene from "../three/useThreeScene";
 import { profile, socials } from "../data/content";
 import { isFinePointer, prefersReducedMotion, scrollToTarget } from "../lib/scroll";
 import RevealHeading from "./RevealHeading";
 import ContactForm from "./ContactForm";
+import Globe from "./Globe";
 import "../style/Contact.css";
-
-const loadContactScene = () => import("../three/contactScene.js");
 
 function MagneticButton({ href, children }) {
   const ref = useRef(null);
@@ -47,7 +45,6 @@ const getTime = () =>
   new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
 
 export default function Contact() {
-  const canvasRef = useRef(null);
   const toastRef = useRef(null);
   const [time, setTime] = useState(getTime);
   const [toast, setToast] = useState("");
@@ -67,8 +64,6 @@ export default function Contact() {
       .to(el, { yPercent: 120, autoAlpha: 0, duration: 0.4, ease: "power2.in" }, "+=1.8");
   };
 
-  useThreeScene(canvasRef, loadContactScene, { progressStart: "top bottom", progressEnd: "bottom top" });
-
   useEffect(() => {
     const id = window.setInterval(() => setTime(getTime()), 30000);
     return () => window.clearInterval(id);
@@ -76,7 +71,7 @@ export default function Contact() {
 
   return (
     <section id="contact" className="contact">
-      <div className="contact__canvas" ref={canvasRef} />
+      <Globe background className="contact__globe" />
 
       <div className="contact__inner">
         <p className="eyebrow" data-reveal>

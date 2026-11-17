@@ -277,7 +277,7 @@
   -webkit-user-drag: none;
 }
 
-/* wave.png split in two: the hand + wrist (x 64–92%, y 0–51% of the image,
+/* wave.webp split in two: the hand + wrist (x 64–92%, y 0–51% of the image,
    over transparency) swings from the wrist; the base has that notch removed.
    The 4% band at the cuff is in both, so the seam never opens. */
 .hero__memoji-base {
