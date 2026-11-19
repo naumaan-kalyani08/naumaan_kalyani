@@ -13,7 +13,7 @@ import "../style/ContactForm.css";
  * Without it, "Send" opens the visitor's mail app with everything pre-filled
  * (addressed to profile.email), so the form still works.
  */
-const ACCESS_KEY = import.meta.env.VITE_WEB3FORMS_KEY;
+const ACCESS_KEY = import.meta.env.VITE_NK_CS_FM;
 const ENDPOINT = "https://api.web3forms.com/submit";
 const TOPICS = ["Website", "Web app", "3D / animation", "Something else"];
 const BUDGETS = ["< $1k", "$1k – $5k", "$5k – $10k", "$10k +"];
