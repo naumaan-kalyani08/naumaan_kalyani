@@ -7,7 +7,7 @@ import Dock from "./Dock";
 import { profile } from "../data/content";
 import { onAppReady } from "../lib/ready";
 import { introEnabled, markIntroSceneReady, revealHero, setHeroDormant } from "../lib/intro";
-import { isSmallScreen, registerScrollAnchor, scrollToTarget } from "../lib/scroll";
+import { getLenis, isSmallScreen, registerScrollAnchor } from "../lib/scroll";
 import "../style/LaptopIntro.css";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -16,6 +16,24 @@ const loadIntroScene = () => import("../three/introScene.js");
 const DONE_AT = 0.999;
 const SCREEN_OFF_OPACITY = 0.002; // see onFrame
 const SITE_HOST = profile.site || "naumaan.dev";
+// Pin length (× viewport height) for the room → screen flight.
+const PIN_VH = { desktop: 4.75, mobile: 2.9 };
+// "Heavier" scroll while the intro is pinned: each wheel notch travels less
+// and Lenis eases toward the target more slowly. Restored at the hand-off.
+const INTRO_WHEEL = 0.8;
+const INTRO_LERP = 0.075;
+
+// Lenis keeps the wheel multiplier on its VirtualScroll, lerp on its options.
+const setIntroScrollFeel = (inIntro) => {
+  const lenis = getLenis();
+  if (!lenis) return;
+  if (lenis.__baseFeel == null) {
+    lenis.__baseFeel = { wheel: lenis.virtualScroll?.options?.wheelMultiplier ?? 1, lerp: lenis.options.lerp };
+  }
+  const base = lenis.__baseFeel;
+  if (lenis.virtualScroll?.options) lenis.virtualScroll.options.wheelMultiplier = inIntro ? base.wheel * INTRO_WHEEL : base.wheel;
+  lenis.options.lerp = inIntro ? INTRO_LERP : base.lerp;
+};
 const CLOCK = new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
 
 // The menu bar clock: live, re-rendered right as each minute turns.
@@ -61,7 +79,7 @@ function IntroStage({ children }) {
   const stageRef = useRef(null);
   const screenRef = useRef(null);
   const glareRef = useRef(null);
-  const skipRef = useRef(null);
+  const uiRef = useRef(null);
   const windowRef = useRef(null);
   const cursorRef = useRef(null);
   // Bridge between the scene loader (async) and the scroll timeline.
@@ -79,7 +97,7 @@ function IntroStage({ children }) {
       const stage = stageRef.current;
       const screen = screenRef.current;
       const glare = glareRef.current;
-      const ui = skipRef.current.parentElement;
+      const ui = uiRef.current;
       const body = document.body;
 
       // Phase values scrubbed by the timeline and read by the scene each frame.
@@ -135,6 +153,7 @@ function IntroStage({ children }) {
         screen.inert = !value;
         root.classList.toggle("is-done", value);
         body.classList.toggle("in-intro", !value);
+        setIntroScrollFeel(!value);
         scene?.setActive(!value);
         // Hero ambient animations that are costly under the flight transform
         // resume a beat after the hand-off (off the seam frame), see CSS.
@@ -229,10 +248,12 @@ function IntroStage({ children }) {
       const trigger = ScrollTrigger.create({
         trigger: root,
         start: "top top",
-        end: () => `+=${Math.round(window.innerHeight * (isSmallScreen() ? 2.3 : 3.8))}`,
+        end: () => `+=${Math.round(window.innerHeight * (isSmallScreen() ? PIN_VH.mobile : PIN_VH.desktop))}`,
         pin: true,
         anticipatePin: 1,
-        scrub: true,
+        // A short catch-up so a single hard flick glides through the
+        // choreography instead of snapping past it.
+        scrub: 0.6,
         animation: tl,
         invalidateOnRefresh: true,
         // Refresh before the hero's own triggers (they offset by this pin).
@@ -258,7 +279,11 @@ function IntroStage({ children }) {
       // setAppReady() runs inside the preloader's GSAP context; anything (even
       // a contextSafe call) executed synchronously there gets adopted by it and
       // reverted when the preloader unmounts — so hop out with a microtask.
-      const startReveal = contextSafe(() => gsap.to(state, { reveal: 1, duration: 2.4, ease: "power3.out" }));
+      const startReveal = contextSafe(() => {
+        // Lenis is created after this effect, so apply the intro feel here.
+        setIntroScrollFeel(!done && !disabled);
+        gsap.to(state, { reveal: 1, duration: 2.4, ease: "power3.out" });
+      });
       const offReady = onAppReady(() => queueMicrotask(startReveal));
 
       // Triggers inside the hero must measure it untransformed.
@@ -474,24 +499,13 @@ function IntroStage({ children }) {
         ScrollTrigger.removeEventListener("refreshInit", onRefreshInit);
         ScrollTrigger.removeEventListener("refresh", onRefreshDone);
         body.classList.remove("in-intro");
+        setIntroScrollFeel(false);
         setHeroDormant(false);
         screen.inert = false;
       };
     },
     { scope: rootRef }
   );
-
-  const handleSkip = (event) => {
-    event.preventDefault();
-    revealHero();
-    scrollToTarget("#home", { immediate: true });
-    requestAnimationFrame(() => {
-      const title = screenRef.current?.querySelector(".hero__title");
-      if (!title) return;
-      title.setAttribute("tabindex", "-1");
-      title.focus({ preventScroll: true });
-    });
-  };
 
   return (
     <div className="intro" ref={rootRef}>
@@ -560,14 +574,11 @@ function IntroStage({ children }) {
         <span className="intro__notch" aria-hidden="true" />
         <span className="intro__glare" ref={glareRef} aria-hidden="true" />
       </div>
-      <div className="intro__ui">
+      <div className="intro__ui" ref={uiRef}>
         <span className="intro__cue" aria-hidden="true">
           <span className="intro__cue-line" />
           Scroll to open
         </span>
-        <a className="intro__skip" href="#home" ref={skipRef} onClick={handleSkip}>
-          Skip intro <span aria-hidden="true">↓</span>
-        </a>
       </div>
     </div>
   );

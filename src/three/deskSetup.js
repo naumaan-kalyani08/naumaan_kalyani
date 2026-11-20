@@ -1096,21 +1096,41 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   keyParts.forEach((g) => g.dispose());
   group.add(keys);
 
-  // USB-C cable: laptop's right side → behind the keyboard → monitor stand.
+  // USB-C cable: plugged into the laptop's right side → behind the keyboard →
+  // behind the monitor stand → up into a port on the back of the display.
+  // USB-C plug: a white strain-relief boot with a metal collar where it meets
+  // the port, built along +x and turned to `dir`.
+  const CABLE = "#e9e9e6";
+  const plug = (port, dir) => {
+    const d = dir.clone().normalize();
+    const along = (k) => port.clone().addScaledVector(d, k);
+    const turn = (geometry, at) => orient(geometry, at, new Vector3(1, 0, 0), d);
+    metal.push(part(turn(new RoundedBoxGeometry(0.03, 0.036, 0.07, 1, 0.012), along(0.015)), { color: "#c9ccd2" }));
+    matte.push(part(turn(new RoundedBoxGeometry(0.15, 0.05, 0.088, 2, 0.022), along(0.105)), { color: CABLE }));
+    matte.push(part(turn(new CylinderGeometry(0.026, 0.02, 0.06, n(10)).rotateZ(Math.PI / 2), along(0.205)), { color: CABLE }));
+    return along(0.23); // where the cable leaves the boot
+  };
+  // Laptop: right side (x ≈ 1.573 world), mid-height of the aluminium shell.
+  const laptopOut = plug(new Vector3(1.574, 0.072, -0.85), new Vector3(1, 0, 0));
+  // Monitor: a down-facing port on the display's bottom edge, left of the
+  // stand (base spans local x ±0.775), so the plug is in view from the front.
+  const monitorOut = plug(new Vector3(...monAt(-0.95, mon.y, -0.012)), new Vector3(0, -1, 0));
   const cablePath = new CatmullRomCurve3(
     [
-      [1.58, 0.05, -0.85],
-      [1.74, 0.03, -1.05],
+      laptopOut,
+      new Vector3(1.86, 0.045, -0.88),
+      new Vector3(1.86, 0.02, -1.15),
       [1.38, 0.019, -1.55],
       [1.1, 0.018, -2.3],
       [1.45, 0.018, -2.78],
-      [2.6, 0.018, -2.9],
-      [3.3, 0.03, -3.05],
-      [3.58, 0.3, -3.13],
-      [3.62, 0.62, -3.15],
-    ].map((p) => new Vector3(...p))
+      [2.05, 0.018, -2.98],
+      monAt(-1.2, 0.018, -0.1),
+      monAt(-1.0, 0.07, -0.04),
+      monAt(-0.955, 0.24, -0.015),
+      monitorOut,
+    ].map((p) => (p.isVector3 ? p : new Vector3(...p)))
   );
-  matte.push(part(new TubeGeometry(cablePath, n(90), 0.018, n(6), false), { color: "#e9e9e6" }));
+  matte.push(part(new TubeGeometry(cablePath, n(110), 0.018, n(6), false), { color: CABLE }));
 
   /* ---- Framed car prints on the slats ---- */
   const frontZ = WALL_Z + SLAT.d;
@@ -1498,8 +1518,10 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   group.add(clock);
   let lastSecond = -1;
   let lastMinute = -1;
+  // Quartz sweep: the second hand glides (fractional seconds). With reduced
+  // motion it ticks once a second instead.
   const setClock = (now) => {
-    const sec = now.getSeconds();
+    const sec = now.getSeconds() + (reduced ? 0 : now.getMilliseconds() / 1000);
     const min = now.getMinutes() + sec / 60;
     const hr = (now.getHours() % 12) + min / 60;
     secondHand.rotation.z = -(sec / 60) * Math.PI * 2;
@@ -1820,7 +1842,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   group.add(edge);
 
   /* ---- Signs of life (desk view only): lamp flickers on, phone wakes ---- */
-  const life = { start: null, lamp: reduced ? 1 : 0, wake: reduced ? 1 : 0, caretOn: true, steamAt: -1 };
+  const life = { start: null, lamp: reduced ? 1 : 0, wake: reduced ? 1 : 0, caretOn: true, steamAt: -1, clockAt: -1 };
   let themeKey = "dark";
   const LAMP_OFF = { bulb: new Color("#4a4540"), shade: new Color("#2a2b30") };
   // Once, ~0.5 s after the scene is revealed: two stutters, then on.
@@ -1983,10 +2005,13 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
         tint(themeKey);
         changed = true;
       }
-      // Live time: the wall clock every second, the phone every minute.
+      // Live time: the wall clock sweeps (~30 fps; ticks each second with
+      // reduced motion), the phone updates every minute.
       if (onDesk) {
         const now = new Date();
-        if (now.getSeconds() !== lastSecond) {
+        const sweep = !reduced && time - life.clockAt >= 1 / 30;
+        if (sweep || now.getSeconds() !== lastSecond) {
+          life.clockAt = time;
           lastSecond = now.getSeconds();
           setClock(now);
           changed = true;

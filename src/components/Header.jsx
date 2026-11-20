@@ -40,6 +40,8 @@ export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isHidden, setIsHidden] = useState(false);
   const [isHeroInView, setIsHeroInView] = useState(true);
+  // "Let's talk" stays hidden until the footer scrolls into view.
+  const [isAtFooter, setIsAtFooter] = useState(false);
   const [clockLabel, setClockLabel] = useState(getCurrentTimeLabel());
   const [section, setSection] = useState("Home");
   const menuButtonRef = useRef(null);
@@ -129,6 +131,18 @@ export default function Header() {
     );
 
     observer.observe(heroSection);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const footer = document.querySelector(".site-footer");
+    if (!footer) return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry) setIsAtFooter(entry.isIntersecting);
+    });
+
+    observer.observe(footer);
     return () => observer.disconnect();
   }, []);
 
@@ -241,7 +255,7 @@ export default function Header() {
 
   return (
     <>
-      <header className={`site-header ${isScrolled ? "is-scrolled" : ""} ${isHidden && !isMenuOpen ? "is-hidden" : ""}`}>
+      <header className={`site-header ${isScrolled ? "is-scrolled" : ""} ${isHidden && !isMenuOpen && !isAtFooter ? "is-hidden" : ""}`}>
         <div className="site-header__inner">
           <a
             className="brand"
@@ -264,9 +278,11 @@ export default function Header() {
 
           <div className="site-header__actions">
             <a
-              className="header-talk"
+              className={`header-talk ${isAtFooter ? "is-visible" : ""}`}
               href="#contact"
               data-magnetic="0.35"
+              aria-hidden={!isAtFooter}
+              tabIndex={isAtFooter ? 0 : -1}
               onClick={(event) => {
                 event.preventDefault();
                 scrollToTarget("#contact");

@@ -4,6 +4,7 @@ import {
   Box3,
   BoxGeometry,
   CanvasTexture,
+  CircleGeometry,
   Color,
   DirectionalLight,
   Fog,
@@ -19,6 +20,9 @@ import {
   PlaneGeometry,
   PointLight,
   Quaternion,
+  RingGeometry,
+  Shape,
+  ShapeGeometry,
   SRGBColorSpace,
   Vector3,
 } from "three";
@@ -232,6 +236,123 @@ function buildKeyboard(keyMaterial, wellMaterial, legendResolution = 1024) {
   legend.position.set(0, 0.03 + keyHeight + 0.004, z0 + depth / 2);
 
   group.add(well, keysMesh, legend);
+
+  // Touch ID (the function row's last key): a round power button — a
+  // brushed-metal ring around a glossy black sensor with a fingerprint.
+  const [tx, tz, tw, td] = rects[KEY_ROWS[0].keys.length - 1];
+  const radius = Math.min(tw - gap, td - gap) * 0.4;
+  const keyTop = 0.03 + keyHeight + 0.003;
+  const sensor = new Mesh(
+    new CircleGeometry(radius * 0.86, 48),
+    new MeshStandardMaterial({ map: canvasTexture(256, 256, drawFingerprint), roughness: 0.22, metalness: 0.1 })
+  );
+  const ring = new Mesh(new RingGeometry(radius * 0.84, radius, 48), new MeshStandardMaterial({ color: "#a7abb4", roughness: 0.3, metalness: 0.9 }));
+  [sensor, ring].forEach((mesh, i) => {
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(tx + tw / 2, keyTop + i * 0.001, tz + td / 2);
+    group.add(mesh);
+  });
+  return group;
+}
+
+// Touch ID sensor face: near-black glass with faint fingerprint ridges.
+function drawFingerprint(ctx, w, h) {
+  const cx = w / 2;
+  const cy = h / 2;
+  const glass = ctx.createRadialGradient(cx * 0.8, cy * 0.7, 0, cx, cy, w / 2);
+  glass.addColorStop(0, "#26282e");
+  glass.addColorStop(1, "#0b0c0f");
+  ctx.fillStyle = glass;
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "rgba(170, 176, 190, 0.38)";
+  ctx.lineWidth = 3.2;
+  ctx.lineCap = "round";
+  // Loops around an off-centre core, each broken at a different angle.
+  for (let i = 0; i < 9; i += 1) {
+    const r = 12 + i * 11;
+    const gapAt = 0.9 + i * 1.7;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 10 - i * 1.2, r * 0.82, r, 0, gapAt + 0.45, gapAt + Math.PI * 2 - 0.25);
+    ctx.stroke();
+  }
+}
+
+// MacBook Pro speaker grilles (either side of the keyboard): a fine hex grid
+// of perforations, drawn dark on a transparent texture.
+function drawSpeakerGrille(ctx, w, h, { cols, rows }) {
+  const px = w / cols;
+  const py = h / rows;
+  const r = Math.min(px, py) * 0.27;
+  for (let row = 0; row < rows; row += 1) {
+    const shift = row % 2 ? px / 2 : 0;
+    for (let col = 0; col < cols; col += 1) {
+      const x = px / 2 + col * px + shift;
+      if (x + r > w) continue;
+      const y = py / 2 + row * py;
+      // hole + a lit lower lip (light falls into the perforation)
+      ctx.fillStyle = "rgba(4, 5, 8, 0.92)";
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+      ctx.beginPath();
+      ctx.arc(x, y + r * 0.25, r, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.lineTo(x, y + r * 0.1);
+      ctx.fill();
+    }
+  }
+}
+
+// Rounded rectangle in the xy plane, centred.
+function roundedRect(w, h, r) {
+  const shape = new Shape();
+  const x = -w / 2;
+  const y = -h / 2;
+  shape.moveTo(x + r, y);
+  shape.lineTo(x + w - r, y);
+  shape.quadraticCurveTo(x + w, y, x + w, y + r);
+  shape.lineTo(x + w, y + h - r);
+  shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  shape.lineTo(x + r, y + h);
+  shape.quadraticCurveTo(x, y + h, x, y + h - r);
+  shape.lineTo(x, y + r);
+  shape.quadraticCurveTo(x, y, x + r, y);
+  return shape;
+}
+
+// Deck details in model units (deck top ≈ y 0.016): the speaker grilles beside
+// the keyboard (x ±13.84) and a navy glass trackpad filling the model's
+// trackpad recess (x ±6.49, z 1.82 → 9.8, surface y ≈ 0.001).
+function buildDeckDetails(anisotropy) {
+  const group = new Group();
+
+  const grille = { w: 0.9, d: 10, x: 14.6, z: -4.6, cols: 6, rows: 62 };
+  const grilleMap = canvasTexture(96, 1024, (ctx, w, h) => drawSpeakerGrille(ctx, w, h, grille));
+  grilleMap.anisotropy = anisotropy;
+  const grilleMaterial = new MeshStandardMaterial({
+    map: grilleMap,
+    transparent: true,
+    depthWrite: false,
+    roughness: 0.6,
+    metalness: 0.2,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
+  const grilleGeometry = new PlaneGeometry(grille.w, grille.d);
+  [-1, 1].forEach((side) => {
+    const mesh = new Mesh(grilleGeometry, grilleMaterial);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(side * grille.x, 0.02, grille.z);
+    group.add(mesh);
+  });
+
+  const trackpad = new Mesh(
+    new ShapeGeometry(roundedRect(12.96, 7.98, 0.6), 8),
+    new MeshStandardMaterial({ color: "#0e1638", roughness: 0.42, metalness: 0.1, envMapIntensity: 0.5 })
+  );
+  trackpad.rotation.x = -Math.PI / 2;
+  trackpad.position.set(0.01, 0.006, 5.81);
+  group.add(trackpad);
   return group;
 }
 
@@ -651,6 +772,7 @@ export function createScene(container, { isMobile, reduced = false }) {
       });
 
       model.add(buildKeyboard(keysMaterial, wellMaterial, isMobile ? 512 : 1024));
+      model.add(buildDeckDetails(Math.min(8, renderer.capabilities.getMaxAnisotropy())));
 
       // Apple logo on the back of the lid (a hand-drawn silhouette; the model
       // has none). Dim at rest, it glows white once scrolling starts (state.glow).
