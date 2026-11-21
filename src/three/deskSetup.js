@@ -97,9 +97,10 @@ function bakeUV(mesh, toUV) {
 const deskUV = (v) => [(v.x - BAKE.desk.x0) / (BAKE.desk.x1 - BAKE.desk.x0), (BAKE.desk.z1 - v.z) / (BAKE.desk.z1 - BAKE.desk.z0)];
 const wallUV = (v) => [(v.x - BAKE.wall.x0) / (BAKE.wall.x1 - BAKE.wall.x0), (v.y - BAKE.wall.y0) / (BAKE.wall.y1 - BAKE.wall.y0)];
 
-/** Felt desk mat under the laptop (and phone/mouse): its top is at MAT_TOP. */
-export const MAT_TOP = 0.012;
-const MAT = { x: 0.6, z: 0.2, w: 6.3, d: 3.45 };
+/** Padded leather desk mat under the laptop (and phone/mouse): its top is at MAT_TOP. */
+export const MAT_TOP = 0.032;
+// r = outer corner radius (concentric with the stitch line in leatherTexture)
+const MAT = { x: 0.6, z: 0.375, w: 6.3, d: 3.8, r: 0.17 };
 // Roughly where the opening shot's camera sits (camera-facing glow quads).
 const CAM0 = new Vector3(3.6, 2.6, 5.3);
 const KEY_DIR = { x: 0.6, z: -0.8 }; // key light's shadow direction on the desk
@@ -170,6 +171,107 @@ const roundRect = (ctx, x, y, w, h, r) => {
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
   else ctx.rect(x, y, w, h);
 };
+
+/* --------------------------------------------------------------- leather */
+
+// Navy leather desk mat: pebbled grain, burnished edges and a tan saddle
+// stitch inset from the border. Drawn at the mat's aspect (it maps once over
+// the top face; the colour is baked in, the material colour stays white).
+const LEATHER = { base: [27, 38, 88], stitch: "rgba(214, 196, 160, 0.9)" };
+function leatherTexture(width, height) {
+  const canvas = makeCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  const [r, g, b] = LEATHER.base;
+  const k = width / 2048; // detail scale
+  ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+  ctx.fillRect(0, 0, width, height);
+
+  // Seeded random → the same grain on every load.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+  // Pebbles: small irregular cells, each a touch lighter or darker.
+  const count = Math.round((width * height) / (26 * k * k));
+  for (let i = 0; i < count; i += 1) {
+    const x = rand() * width;
+    const y = rand() * height;
+    const shade = (rand() - 0.5) * 22;
+    ctx.fillStyle = `rgb(${r + shade}, ${g + shade}, ${b + shade * 1.3})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, (1.6 + rand() * 1.6) * k, (1.3 + rand() * 1.4) * k, rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Creases between the pebbles: fine dark flecks.
+  ctx.fillStyle = "rgba(6, 9, 26, 0.35)";
+  for (let i = 0; i < count * 0.6; i += 1) {
+    ctx.fillRect(rand() * width, rand() * height, (0.8 + rand()) * k, (0.8 + rand()) * k);
+  }
+
+  // Per-pixel noise breaks up the regularity (and any banding).
+  const image = ctx.getImageData(0, 0, width, height);
+  const px = image.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const n = (rand() - 0.5) * 10;
+    px[i] += n;
+    px[i + 1] += n;
+    px[i + 2] += n;
+  }
+  ctx.putImageData(image, 0, 0);
+
+  // Soft, broad tonal variation (hide-like), then burnished darker edges.
+  for (let i = 0; i < 14; i += 1) {
+    const x = rand() * width;
+    const y = rand() * height;
+    const rad = (0.15 + rand() * 0.25) * width;
+    const blot = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    const light = rand() > 0.5;
+    blot.addColorStop(0, light ? "rgba(255,255,255,0.035)" : "rgba(0,0,0,0.06)");
+    blot.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = blot;
+    ctx.fillRect(0, 0, width, height);
+  }
+  const edge = 46 * k;
+  // [gradient from → to, fill rect] for the top, bottom, left, right edges
+  [
+    [0, 0, 0, edge, 0, 0, width, edge],
+    [0, height, 0, height - edge, 0, height - edge, width, edge],
+    [0, 0, edge, 0, 0, 0, edge, height],
+    [width, 0, width - edge, 0, width - edge, 0, edge, height],
+  ].forEach(([gx0, gy0, gx1, gy1, x, y, w, h]) => {
+    const grad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    grad.addColorStop(0, "rgba(0, 0, 0, 0.38)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, w, h);
+  });
+
+  // Saddle stitch: the stitching pinches the padding into a soft groove (the
+  // pad puffs up either side of it), with the thread running along it.
+  const inset = 30 * k;
+  const radius = 26 * k;
+  ctx.lineCap = "round";
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = 9 * k;
+  ctx.strokeStyle = "rgba(4, 6, 18, 0.4)";
+  ctx.lineWidth = 5 * k;
+  roundRect(ctx, inset, inset, width - inset * 2, height - inset * 2, radius);
+  ctx.stroke();
+  ctx.restore();
+  // puffed padding: a faint highlight on the inner side of the groove
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.lineWidth = 14 * k;
+  const puff = inset + 11 * k;
+  roundRect(ctx, puff, puff, width - puff * 2, height - puff * 2, Math.max(1, radius - 11 * k));
+  ctx.stroke();
+  ctx.setLineDash([9 * k, 6 * k]);
+  ctx.strokeStyle = LEATHER.stitch;
+  ctx.lineWidth = 2.4 * k;
+  roundRect(ctx, inset, inset - 0.6 * k, width - inset * 2, height - inset * 2, radius);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  return toTexture(canvas);
+}
 
 /* ------------------------------------------------------------------ wood */
 
@@ -488,6 +590,44 @@ function roundedRectShape(w, h, r) {
   shape.lineTo(x, y + r);
   shape.quadraticCurveTo(x, y, x + r, y);
   return shape;
+}
+
+// Stuffed desk pad: a rounded slab whose edges roll over (a deep, soft bevel),
+// lying on y = 0 with its top at `thickness`. UVs are a top-down projection,
+// so the leather map lands once over the top and the rolled edges pick up its
+// burnished border. The material is unlit (baked light), so the roll is
+// shaded with vertex colours: 1 on the flat top, darker as the edge turns
+// away from the room's key light.
+function paddedMatGeometry(w, d, thickness, radius, curveSegments, bevelSegments) {
+  const roll = Math.min(0.045, radius * 0.6); // how far the edge rounds in
+  const bevel = thickness * 0.45;
+  const geometry = new ExtrudeGeometry(roundedRectShape(w - roll * 2, d - roll * 2, radius - roll), {
+    depth: thickness - bevel * 2,
+    bevelEnabled: true,
+    bevelThickness: bevel,
+    bevelSize: roll,
+    bevelSegments,
+    curveSegments,
+  });
+  geometry.rotateX(-Math.PI / 2); // extrusion (+z) → up
+  geometry.translate(0, bevel, 0);
+
+  const p = geometry.attributes.position;
+  const nrm = geometry.attributes.normal;
+  const uv = new Float32Array(p.count * 2);
+  const colors = new Float32Array(p.count * 3);
+  const light = new Vector3(-3, 5, 4).normalize();
+  const n = new Vector3();
+  for (let i = 0; i < p.count; i += 1) {
+    uv[i * 2] = p.getX(i) / w + 0.5;
+    uv[i * 2 + 1] = 0.5 - p.getZ(i) / d;
+    n.fromBufferAttribute(nrm, i);
+    const shade = MathUtils.clamp(n.dot(light) / light.y, 0.42, 1);
+    colors.set([shade, shade, shade], i * 3);
+  }
+  geometry.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+  return geometry;
 }
 
 // Map a plane's UVs to a pixel rect of the atlas.
@@ -985,26 +1125,53 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   );
 
   // External monitor (left, behind): thin glossy display on a metal stand.
-  const mon = { x: 3.5, z: -2.75, ry: -0.36, w: 4.3, h: 2.45, y: 0.62 };
+  const mon = { x: 3.5, z: -3.1, ry: -0.36, w: 4.3, h: 2.45, y: 0.62 };
   const monAt = (dx, dy, dz) => {
     const c = Math.cos(mon.ry);
     const s = Math.sin(mon.ry);
     return [mon.x + dx * c + dz * s, dy, mon.z - dx * s + dz * c];
   };
-  metal.push(part(new RoundedBoxGeometry(1.55, 0.06, 1.05, 2, 0.025), { position: monAt(0, 0.03, -0.15), rotation: [0, mon.ry, 0], color: steel }));
-  metal.push(part(new RoundedBoxGeometry(0.34, 1.2, 0.09, 2, 0.04), { position: monAt(0, 0.66, -0.4), rotation: [0.1, mon.ry, 0], color: steel }));
+  // Stand (same footprint as the baked shadow): a thin slab base, a slim arm
+  // leaning forward from the back of the base (with a cable cutout) up to a
+  // hinge + mounting plate on the back of the display housing.
+  {
+    const turn = [0, mon.ry, 0];
+    metal.push(part(new RoundedBoxGeometry(1.55, 0.03, 1.05, 3, 0.014), { position: monAt(0, 0.015, -0.15), rotation: turn, color: steel }));
+    const foot = { y: 0.03, z: -0.52 };
+    const hinge = { y: 1.36, z: -0.2 };
+    const rise = hinge.y - foot.y;
+    const lean = Math.atan2(hinge.z - foot.z, rise); // top leans toward the screen
+    const arm = new RoundedBoxGeometry(0.4, Math.hypot(rise, hinge.z - foot.z), 0.06, 3, 0.028).rotateX(lean);
+    metal.push(part(arm, { position: monAt(0, (foot.y + hinge.y) / 2, (foot.z + hinge.z) / 2), rotation: turn, color: steel }));
+    // where the arm meets the base
+    metal.push(part(new RoundedBoxGeometry(0.44, 0.05, 0.17, 2, 0.022), { position: monAt(0, 0.045, foot.z), rotation: turn, color: steel }));
+    // cable cutout: a dark slot through the arm (pokes out of both faces)
+    const t = (0.42 - foot.y) / rise;
+    const slot = new RoundedBoxGeometry(0.2, 0.11, 0.066, 2, 0.03).rotateX(lean);
+    matte.push(part(slot, { position: monAt(0, 0.42, foot.z + t * (hinge.z - foot.z)), rotation: turn, color: "#202228" }));
+    // hinge barrel + the plate that mounts it to the housing (back at z -0.13)
+    const barrel = new CylinderGeometry(0.052, 0.052, 0.48, n(18)).rotateZ(Math.PI / 2);
+    metal.push(part(barrel, { position: monAt(0, hinge.y, hinge.z + 0.02), rotation: turn, color: "#9da0a8" }));
+    metal.push(part(new RoundedBoxGeometry(0.52, 0.34, 0.05, 2, 0.02), { position: monAt(0, hinge.y, -0.15), rotation: turn, color: "#9da0a8" }));
+  }
   gloss.push(part(new RoundedBoxGeometry(mon.w, mon.h, 0.07, 3, 0.03), { position: monAt(0, mon.y + mon.h / 2, 0), rotation: [0, mon.ry, 0], color: "#0d0e12" }));
   matte.push(part(new RoundedBoxGeometry(mon.w * 0.62, mon.h * 0.62, 0.12, 2, 0.05), { position: monAt(0, mon.y + mon.h / 2, -0.07), rotation: [0, mon.ry, 0], color: "#1a1b20" }));
 
-  // Felt desk mat under the laptop, phone and mouse: unlit like the desk,
-  // so it takes the same baked light and shadows.
-  const mat = new Mesh(new RoundedBoxGeometry(MAT.w, MAT_TOP, MAT.d, 2, 0.005), new MeshBasicMaterial({ toneMapped: false }));
-  mat.position.set(MAT.x, MAT_TOP / 2, MAT.z);
+  // Navy leather desk mat under the laptop, phone and mouse: unlit like the
+  // desk, so it takes the same baked light and shadows.
+  const leather = own(leatherTexture(isMobile ? 1024 : 2048, Math.round((isMobile ? 1024 : 2048) * (MAT.d / MAT.w))));
+  leather.anisotropy = Math.min(8, renderer?.capabilities.getMaxAnisotropy() ?? 1);
+  const mat = new Mesh(
+    paddedMatGeometry(MAT.w, MAT.d, MAT_TOP, MAT.r, n(12), isMobile ? 4 : 8),
+    new MeshBasicMaterial({ map: leather, vertexColors: true, toneMapped: false })
+  );
+  mat.position.set(MAT.x, 0, MAT.z);
   group.add(mat);
   bakeUV(mat, deskUV);
 
-  // Magic Mouse (right of the laptop): a flattened glossy shell.
-  const mouse = isMobile ? { x: 2.02, z: -0.42, ry: -0.2 } : { x: 1.98, z: -0.78, ry: -0.2 };
+  // Magic Mouse (right of the keyboard): a flattened glossy shell.
+  // right of the keyboard, on the desk itself (off the mat), turned with the keyboard
+  const mouse = { x: 4.2, z: -1.84, ry: -0.3 };
   // Magic Mouse: a low, gently domed white shell (flatter at the front) on a
   // thin aluminium base that shows as a silver line all around.
   // Footprint is a squircle (|x|³+|z|³=1) 0.3 × 0.58; the top is a low arch
@@ -1025,7 +1192,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     }
     mouseGeo.computeVertexNormals();
   }
-  gloss.push(part(mouseGeo, { position: [mouse.x, MAT_TOP + MOUSE.base, mouse.z], rotation: [0, mouse.ry, 0], color: "#f7f6f2" }));
+  gloss.push(part(mouseGeo, { position: [mouse.x, MOUSE.base, mouse.z], rotation: [0, mouse.ry, 0], color: "#f7f6f2" }));
   const footprint = new Shape();
   for (let i = 0; i <= 64; i += 1) {
     const t = (i / 64) * Math.PI * 2;
@@ -1034,63 +1201,114 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   }
   const baseGeo = new ExtrudeGeometry(footprint, { depth: MOUSE.base, bevelEnabled: false, curveSegments: 1 });
   baseGeo.rotateX(Math.PI / 2).translate(0, MOUSE.base, 0);
-  metal.push(part(baseGeo, { position: [mouse.x, MAT_TOP, mouse.z], rotation: [0, mouse.ry, 0], color: "#c8cacf" }));
+  metal.push(part(baseGeo, { position: [mouse.x, 0, mouse.z], rotation: [0, mouse.ry, 0], color: "#c8cacf" }));
 
   // Wireless keyboard in front of the monitor: aluminium base + white keys.
-  const kb = { x: 2.55, z: -1.85, ry: -0.3 };
+  const kb = { x: 2.55, z: -2.35, ry: -0.3 }; // fully behind the desk mat (its back edge is z -1.525)
   const kbAt = (dx, dy, dz) => {
     const c = Math.cos(kb.ry);
     const s = Math.sin(kb.ry);
     return [kb.x + dx * c + dz * s, dy, kb.z - dx * s + dz * c];
   };
-  metal.push(part(new RoundedBoxGeometry(2.25, 0.05, 0.74, 2, 0.02), { position: kbAt(0, 0.025, 0), rotation: [0, kb.ry, 0], color: steel }));
-  const pitch = 0.148;
-  const rows = [Array(14).fill(1), Array(14).fill(1), Array(14).fill(1), Array(14).fill(1), [1, 1, 1, 1.3, 5.4, 1.3, 1, 1, 1]];
-  const LEGENDS = [
-    ["esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "⌫"],
-    ["⇥", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\"],
-    ["⇪", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "#", "↩"],
-    ["⇧", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "↑", "?", "⇧"],
-    ["fn", "⌃", "⌥", "⌘", "", "⌘", "⌥", "←", "→"],
+  // Magic Keyboard style: a wedge of aluminium (thin at the front, rising to
+  // the back) with low-profile rounded keycaps following its slope: a
+  // half-height function row with Touch ID, inverted-T arrows. Same footprint
+  // as the baked contact shadow.
+  const KB = { w: 2.25, d: 0.86, front: 0.03, back: 0.058 };
+  const slope = (KB.back - KB.front) / KB.d;
+  const tilt = Math.atan(slope);
+  const topAt = (z) => KB.front + (KB.back - KB.front) * (0.5 - z / KB.d); // local z: back = -d/2
+  {
+    const base = new RoundedBoxGeometry(KB.w, KB.front, KB.d, 3, 0.012);
+    base.translate(0, KB.front / 2, 0);
+    const p = base.attributes.position;
+    for (let i = 0; i < p.count; i += 1) {
+      if (p.getY(i) > KB.front / 2) p.setY(i, p.getY(i) + topAt(p.getZ(i)) - KB.front);
+    }
+    base.computeVertexNormals();
+    metal.push(part(base, { position: kbAt(0, 0, 0), rotation: [0, kb.ry, 0], color: steel }));
+  }
+  // Layout in key units (u): rows of [width…], "ud" = stacked ▲/▼.
+  const KB_ROWS = [
+    { h: 0.5, keys: [1.5, ...Array(12).fill(1), 1.5], labels: ["esc", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "tid"] },
+    { h: 1, keys: [...Array(13).fill(1), 2], labels: ["`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "delete"] },
+    { h: 1, keys: [1.5, ...Array(12).fill(1), 1.5], labels: ["tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\"] },
+    { h: 1, keys: [1.75, ...Array(11).fill(1), 2.25], labels: ["caps", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "return"] },
+    { h: 1, keys: [2.25, ...Array(10).fill(1), 2.75], labels: ["shift", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "shift"] },
+    { h: 1, keys: [1, 1, 1, 1.25, 5.5, 1.25, 1, 1, "ud", 1], labels: ["fn", "⌃", "⌥", "⌘", "", "⌘", "⌥", "◀", "▲", "▼", "▶"] },
   ];
-  // Legend atlas: one 64×64 cell per key (16 × 5 grid), cell 15 of row 0 blank.
-  const legendCanvas = makeCanvas(1024, 320);
+  const P = (KB.w - 0.1) / 15; // key pitch (world units)
+  const PX = 64; // legend atlas px per key unit: the atlas is the keyboard's plan view
+  const ATLAS = { w: 1024, h: 384 };
+  const keyRects = []; // [x, z, w, d] in key units, + label
+  {
+    let zu = 0;
+    KB_ROWS.forEach(({ h, keys, labels }) => {
+      let xu = 0;
+      let li = 0;
+      keys.forEach((units) => {
+        if (units === "ud") {
+          keyRects.push([xu, zu, 1, h / 2, labels[li++]], [xu, zu + h / 2, 1, h / 2, labels[li++]]);
+          xu += 1;
+          return;
+        }
+        keyRects.push([xu, zu, units, h, labels[li++]]);
+        xu += units;
+      });
+      zu += h;
+    });
+  }
+  const legendCanvas = makeCanvas(ATLAS.w, ATLAS.h);
   {
     const lc = legendCanvas.getContext("2d");
     lc.fillStyle = "#f6f6f4";
-    lc.fillRect(0, 0, 1024, 320);
-    lc.fillStyle = "#3b3d44";
-    lc.textAlign = "center";
+    lc.fillRect(0, 0, ATLAS.w, ATLAS.h);
+    lc.fillStyle = "#2b2d33";
+    lc.strokeStyle = "#8d9099";
     lc.textBaseline = "middle";
-    LEGENDS.forEach((row, r) =>
-      row.forEach((label, i) => {
-        lc.font = `500 ${label.length > 1 ? 20 : 30}px ${FONT_UI}`;
-        lc.fillText(label, i * 64 + 32, r * 64 + 34);
-      })
-    );
+    keyRects.forEach(([x, z, w, d, label]) => {
+      const cx = (x + w / 2) * PX;
+      const cy = (z + d / 2) * PX;
+      if (label === "tid") {
+        // Touch ID: a fine ring
+        lc.lineWidth = 2;
+        lc.beginPath();
+        lc.arc(cx, cy, d * PX * 0.3, 0, Math.PI * 2);
+        lc.stroke();
+        return;
+      }
+      if (!label) return;
+      const single = label.length === 1;
+      const size = d < 1 ? 13 : single ? 26 : 14;
+      lc.font = `600 ${size}px ${FONT_UI}`;
+      // letters centred; modifier words bottom-left, like Apple's keycaps
+      lc.textAlign = single || d < 1 ? "center" : "left";
+      lc.fillText(label, single || d < 1 ? cx : x * PX + 9, single || d < 1 ? cy + 1 : (z + d) * PX - 14);
+    });
   }
   const legendTexture = own(toTexture(legendCanvas));
   legendTexture.anisotropy = anisotropy;
   const keyParts = [];
-  rows.forEach((row, r) => {
-    const total = row.reduce((a, b) => a + b, 0);
-    let x = -(total * pitch) / 2;
-    row.forEach((units, i) => {
-      const w = units * pitch;
-      const g = new BoxGeometry(w - 0.022, 0.024, pitch - 0.026);
-      // top face (+y, vertices 8–11) shows its legend cell; the rest is plain
-      const uv = g.attributes.uv;
-      const u0 = (i * 64 + (units > 1 ? 0 : 4)) / 1024;
-      const u1 = (i * 64 + (units > 1 ? 64 : 60)) / 1024;
-      const v0 = 1 - (r * 64 + 60) / 320;
-      const v1 = 1 - (r * 64 + 4) / 320;
-      for (let k = 0; k < uv.count; k += 1) {
-        if (k >= 8 && k < 12) uv.setXY(k, uv.getX(k) ? u1 : u0, uv.getY(k) ? v1 : v0);
-        else uv.setXY(k, 15.5 / 16, 1 - 0.5 / 5);
-      }
-      keyParts.push(part(g, { position: kbAt(x + w / 2, 0.062, -0.27 + r * 0.135), rotation: [0, kb.ry, 0] }));
-      x += w;
-    });
+  const blank = [1000 / ATLAS.w, 1 - 375 / ATLAS.h]; // a plain keycap pixel
+  const originX = -7.5 * P;
+  const originZ = -KB.d / 2 + 0.035;
+  const KEY_H = 0.02;
+  keyRects.forEach(([xu, zu, wu, du]) => {
+    const gap = du < 1 ? 0.016 : 0.024;
+    const g = new RoundedBoxGeometry(wu * P - 0.024, KEY_H, du * P - gap, 2, 0.007);
+    // Top-facing vertices sample the plan-view atlas; sides are plain.
+    const pos = g.attributes.position;
+    const nrm = g.attributes.normal;
+    const uv = g.attributes.uv;
+    for (let k = 0; k < uv.count; k += 1) {
+      if (nrm.getY(k) > 0.7) {
+        uv.setXY(k, ((xu + wu / 2) * PX + (pos.getX(k) / P) * PX) / ATLAS.w, 1 - ((zu + du / 2) * PX + (pos.getZ(k) / P) * PX) / ATLAS.h);
+      } else uv.setXY(k, blank[0], blank[1]);
+    }
+    g.rotateX(tilt); // follow the wedge's slope
+    const cx = originX + (xu + wu / 2) * P;
+    const cz = originZ + (zu + du / 2) * P;
+    keyParts.push(part(g, { position: kbAt(cx, topAt(cz) + KEY_H / 2 - 0.004, cz), rotation: [0, kb.ry, 0] }));
   });
   const keys = new Mesh(mergeGeometries(keyParts, false), new MeshStandardMaterial({ map: legendTexture, roughness: 0.45, metalness: 0, envMapIntensity: 0.6 }));
   keyParts.forEach((g) => g.dispose());
@@ -1111,19 +1329,28 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     return along(0.23); // where the cable leaves the boot
   };
   // Laptop: right side (x ≈ 1.573 world), mid-height of the aluminium shell.
-  const laptopOut = plug(new Vector3(1.574, 0.072, -0.85), new Vector3(1, 0, 0));
+  // The port sits toward the back of the side so the cable can turn behind
+  // the mouse (body ≈ x 1.83 → 2.13, z -1.06 → -0.5) instead of through it.
+  const laptopOut = plug(new Vector3(1.574, MAT_TOP + 0.06, -0.97), new Vector3(1, 0, 0));
+  const R = 0.018; // cable radius: resting heights are surface + R
+  const matBack = MAT.z - MAT.d / 2;
   // Monitor: a down-facing port on the display's bottom edge, left of the
   // stand (base spans local x ±0.775), so the plug is in view from the front.
   const monitorOut = plug(new Vector3(...monAt(-0.95, mon.y, -0.012)), new Vector3(0, -1, 0));
   const cablePath = new CatmullRomCurve3(
     [
       laptopOut,
-      new Vector3(1.86, 0.045, -0.88),
-      new Vector3(1.86, 0.02, -1.15),
-      [1.38, 0.019, -1.55],
-      [1.1, 0.018, -2.3],
-      [1.45, 0.018, -2.78],
-      [2.05, 0.018, -2.98],
+      [1.83, MAT_TOP + 0.036, -1.03],
+      [1.84, MAT_TOP + R, -1.24],
+      // over the pad's rolled back edge, down onto the desk
+      [1.7, MAT_TOP + R - 0.004, matBack + 0.06],
+      [1.5, R + 0.004, matBack - 0.1],
+      // round the keyboard's front-left corner (≈ x 1.35, z -2.27), between
+      // its back-left corner (≈ 1.6, -3.09) and the speaker (≈ 1.25, -3.12)
+      [1.22, R, -1.8],
+      [1.08, R, -2.35],
+      [1.42, R, -3.12],
+      [1.9, R, -3.35],
       monAt(-1.2, 0.018, -0.1),
       monAt(-1.0, 0.07, -0.04),
       monAt(-0.955, 0.24, -0.015),
@@ -1658,8 +1885,9 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   addDetail("notes", part(atlasUV(new PlaneGeometry(noteSize, noteSize), REGION.notes[0], ATLAS_W, ATLAS_H), { position: monAt(-mon.w / 2 + 0.22, mon.y + mon.h - 0.15, 0.04), rotation: [0, mon.ry, 0.12], color: "#ffffff" }));
   addDetail("notes", part(atlasUV(new PlaneGeometry(noteSize, noteSize), REGION.notes[3], ATLAS_W, ATLAS_H), { position: monAt(mon.w / 2 - 0.27, mon.y + 0.2, 0.041), rotation: [0, mon.ry, -0.09], color: "#ffffff" }));
   [
-    [-1.45, 1.85, 0.2, 1],
-    [-0.85, 2.15, -0.14, 2],
+    // fully on the mat (front edge z = MAT.z + MAT.d / 2 ≈ 2.28)
+    [-1.45, 1.66, 0.2, 1],
+    [-0.85, 1.86, -0.14, 2],
   ].forEach(([x, z, r, i], k) => {
     addDetail("notes", part(atlasUV(new PlaneGeometry(0.62, 0.62), REGION.notes[i], ATLAS_W, ATLAS_H), { position: [x, MAT_TOP + 0.004 + k * 0.001, z], rotation: [-Math.PI / 2, 0, r], color: "#ffffff" }));
   });
@@ -1948,7 +2176,7 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
       deskMaterial.lightMap = fallback;
       deskMaterial.lightMapIntensity = Math.PI; // basic material: lightMap × π⁻¹
       deskMaterial.needsUpdate = true;
-      mat.material.color.set("#34353c");
+      mat.material.color.set("#ffffff"); // the navy is in the leather map
       mat.material.lightMap = null;
       mat.material.needsUpdate = true;
       wall.material.lightMap = null;

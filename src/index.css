@@ -195,16 +195,22 @@ button {
 }
 
 /* Masked word reveal (see RevealHeading.jsx) */
+/* Room below the line box for descenders (g, y, p) in tight display
+   line-heights: the mask clips at its padding box, and a gradient word's
+   background (background-clip: text) only paints its own box — so both
+   extend down, with a negative margin so line spacing is unchanged. */
 .split-mask {
   display: inline-block;
   overflow: hidden;
   vertical-align: top;
-  padding-bottom: 0.08em;
-  margin-bottom: -0.08em;
+  padding-bottom: 0.24em;
+  margin-bottom: -0.24em;
 }
 
 .split-word {
   display: inline-block;
+  padding-bottom: 0.24em;
+  margin-bottom: -0.24em;
 }
 
 /* ---------- Buttons ---------- */

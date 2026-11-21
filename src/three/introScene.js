@@ -4,7 +4,6 @@ import {
   Box3,
   BoxGeometry,
   CanvasTexture,
-  CircleGeometry,
   Color,
   DirectionalLight,
   Fog,
@@ -20,7 +19,6 @@ import {
   PlaneGeometry,
   PointLight,
   Quaternion,
-  RingGeometry,
   Shape,
   ShapeGeometry,
   SRGBColorSpace,
@@ -28,6 +26,7 @@ import {
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import modelUrl from "../assets/models/macbook.glb?url";
 import { createBase, lerp } from "./base";
@@ -140,9 +139,11 @@ const shadowTexture = (blur, rectW, rectH) =>
   });
 
 // Keyboard (the model's deck is flat): one InstancedMesh → one draw call.
-// Rows in key units (each row sums to 15u); "ud" = stacked up/down arrows.
+// Rows in key units (each row sums to 15u); "ud" = stacked up/down arrows,
+// "tid" = the square Touch ID key (as wide as its row is tall).
+const FN_H = 0.55;
 const KEY_ROWS = [
-  { h: 0.55, keys: [1.5, ...Array(12).fill(1), 1.5] },
+  { h: FN_H, keys: [1.5, ...Array(12).fill((15 - 1.5 - FN_H) / 12), "tid"] },
   { h: 1, keys: [...Array(13).fill(1), 2] },
   { h: 1, keys: [1.5, ...Array(12).fill(1), 1.5] },
   { h: 1, keys: [1.75, ...Array(11).fill(1), 2.25] },
@@ -168,12 +169,14 @@ function buildKeyboard(keyMaterial, wellMaterial, legendResolution = 1024) {
   const z0 = -9.5;
   const keyHeight = 0.09;
   const rects = [];
+  let touchIndex = -1;
   let z = z0;
   KEY_ROWS.forEach(({ h, keys }) => {
     let x = -7.5 * pitch;
     const depth = h * pitch;
     keys.forEach((key) => {
-      const width = (key === "ud" ? 1 : key) * pitch;
+      const width = (key === "ud" ? 1 : key === "tid" ? h : key) * pitch;
+      if (key === "tid") touchIndex = rects.length;
       if (key === "ud") {
         rects.push([x, z, width, depth / 2], [x, z + depth / 2, width, depth / 2]);
       } else {
@@ -194,7 +197,9 @@ function buildKeyboard(keyMaterial, wellMaterial, legendResolution = 1024) {
     // the half-height arrow keys share one gap, not two
     const dGap = d < pitch * 0.6 ? half : gap;
     position.set(x + w / 2, 0.03 + keyHeight / 2, rz + d / 2);
-    scale.set(w - gap, 1, d - dGap);
+    // Touch ID is its own rounded mesh (below): hide its instance.
+    if (i === touchIndex) scale.set(0, 0, 0);
+    else scale.set(w - gap, 1, d - dGap);
     keysMesh.setMatrixAt(i, m.compose(position, identity, scale));
   });
   keysMesh.instanceMatrix.needsUpdate = true;
@@ -237,22 +242,48 @@ function buildKeyboard(keyMaterial, wellMaterial, legendResolution = 1024) {
 
   group.add(well, keysMesh, legend);
 
-  // Touch ID (the function row's last key): a round power button — a
-  // brushed-metal ring around a glossy black sensor with a fingerprint.
-  const [tx, tz, tw, td] = rects[KEY_ROWS[0].keys.length - 1];
-  const radius = Math.min(tw - gap, td - gap) * 0.4;
-  const keyTop = 0.03 + keyHeight + 0.003;
-  const sensor = new Mesh(
-    new CircleGeometry(radius * 0.86, 48),
-    new MeshStandardMaterial({ map: canvasTexture(256, 256, drawFingerprint), roughness: 0.22, metalness: 0.1 })
+  // Touch ID (the function row's last key): a rounded-square power button —
+  // a brushed-metal rim around a glossy black sensor with a fingerprint.
+  const [tx, tz, tw, td] = rects[touchIndex];
+  const side = Math.min(tw, td) - gap;
+  const cx = tx + tw / 2;
+  const cz = tz + td / 2;
+  const rim = new Mesh(
+    new RoundedBoxGeometry(side, keyHeight, side, 3, side * 0.2),
+    new MeshStandardMaterial({ color: "#a7abb4", roughness: 0.3, metalness: 0.9 })
   );
-  const ring = new Mesh(new RingGeometry(radius * 0.84, radius, 48), new MeshStandardMaterial({ color: "#a7abb4", roughness: 0.3, metalness: 0.9 }));
-  [sensor, ring].forEach((mesh, i) => {
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(tx + tw / 2, keyTop + i * 0.001, tz + td / 2);
-    group.add(mesh);
-  });
+  rim.position.set(cx, 0.03 + keyHeight / 2, cz);
+  const inner = side * 0.84;
+  const sensorGeometry = new ShapeGeometry(roundedSquare(inner, inner * 0.17), 6);
+  // ShapeGeometry's UVs are the shape's own coordinates: normalise to 0..1.
+  const uv = sensorGeometry.attributes.uv;
+  for (let i = 0; i < uv.count; i += 1) uv.setXY(i, uv.getX(i) / inner + 0.5, uv.getY(i) / inner + 0.5);
+  // Unlit: a lit dark surface turns grey at this grazing angle (the room's
+  // reflections), and the sensor should read as black glass.
+  const sensor = new Mesh(
+    sensorGeometry,
+    new MeshBasicMaterial({ map: canvasTexture(256, 256, drawFingerprint), toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })
+  );
+  sensor.rotation.x = -Math.PI / 2;
+  sensor.position.set(cx, 0.03 + keyHeight + 0.008, cz);
+  group.add(rim, sensor);
   return group;
+}
+
+// Rounded square in the xy plane, centred.
+function roundedSquare(size, r) {
+  const s = size / 2;
+  const shape = new Shape();
+  shape.moveTo(-s + r, -s);
+  shape.lineTo(s - r, -s);
+  shape.quadraticCurveTo(s, -s, s, -s + r);
+  shape.lineTo(s, s - r);
+  shape.quadraticCurveTo(s, s, s - r, s);
+  shape.lineTo(-s + r, s);
+  shape.quadraticCurveTo(-s, s, -s, s - r);
+  shape.lineTo(-s, -s + r);
+  shape.quadraticCurveTo(-s, -s, -s + r, -s);
+  return shape;
 }
 
 // Touch ID sensor face: near-black glass with faint fingerprint ridges.
@@ -260,11 +291,11 @@ function drawFingerprint(ctx, w, h) {
   const cx = w / 2;
   const cy = h / 2;
   const glass = ctx.createRadialGradient(cx * 0.8, cy * 0.7, 0, cx, cy, w / 2);
-  glass.addColorStop(0, "#26282e");
+  glass.addColorStop(0, "#22242b");
   glass.addColorStop(1, "#0b0c0f");
   ctx.fillStyle = glass;
   ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = "rgba(170, 176, 190, 0.38)";
+  ctx.strokeStyle = "rgba(170, 176, 190, 0.3)";
   ctx.lineWidth = 3.2;
   ctx.lineCap = "round";
   // Loops around an off-centre core, each broken at a different angle.
@@ -303,26 +334,8 @@ function drawSpeakerGrille(ctx, w, h, { cols, rows }) {
   }
 }
 
-// Rounded rectangle in the xy plane, centred.
-function roundedRect(w, h, r) {
-  const shape = new Shape();
-  const x = -w / 2;
-  const y = -h / 2;
-  shape.moveTo(x + r, y);
-  shape.lineTo(x + w - r, y);
-  shape.quadraticCurveTo(x + w, y, x + w, y + r);
-  shape.lineTo(x + w, y + h - r);
-  shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  shape.lineTo(x + r, y + h);
-  shape.quadraticCurveTo(x, y + h, x, y + h - r);
-  shape.lineTo(x, y + r);
-  shape.quadraticCurveTo(x, y, x + r, y);
-  return shape;
-}
-
 // Deck details in model units (deck top ≈ y 0.016): the speaker grilles beside
-// the keyboard (x ±13.84) and a navy glass trackpad filling the model's
-// trackpad recess (x ±6.49, z 1.82 → 9.8, surface y ≈ 0.001).
+// the keyboard (x ±13.84).
 function buildDeckDetails(anisotropy) {
   const group = new Group();
 
@@ -346,13 +359,6 @@ function buildDeckDetails(anisotropy) {
     group.add(mesh);
   });
 
-  const trackpad = new Mesh(
-    new ShapeGeometry(roundedRect(12.96, 7.98, 0.6), 8),
-    new MeshStandardMaterial({ color: "#0e1638", roughness: 0.42, metalness: 0.1, envMapIntensity: 0.5 })
-  );
-  trackpad.rotation.x = -Math.PI / 2;
-  trackpad.position.set(0.01, 0.006, 5.81);
-  group.add(trackpad);
   return group;
 }
 
@@ -537,7 +543,7 @@ export function createScene(container, { isMobile, reduced = false }) {
   // ---- Laptop ----
   const laptop = new Group();
   laptop.scale.setScalar(SCALE);
-  laptop.position.y = MAT_TOP; // sits on the felt desk mat
+  laptop.position.y = MAT_TOP; // sits on the padded desk mat
   scene.add(laptop);
 
   const panelMaterial = new MeshBasicMaterial({ color: SCREEN_OFF.clone(), toneMapped: false });
