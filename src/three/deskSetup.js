@@ -1461,10 +1461,10 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
     b.quadraticCurveTo(140, 92, 232, 102);
     b.stroke();
     const items = [
+      [true, "Reply to emails"],
       [true, "Ship portfolio v2"],
       [false, "Polish the 3D desk"],
       [false, "Learn WebGL shaders"],
-      [false, "Reply to emails"],
     ];
     b.font = `600 36px ${FONT_HAND}`;
     items.forEach(([done, text], i) => {
