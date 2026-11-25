@@ -555,6 +555,7 @@ export function createScene(container, { isMobile, reduced = false }) {
   const keysMaterial = new MeshStandardMaterial({ color: THEMES.dark.keys, roughness: 0.5, metalness: 0.15 });
   const wellMaterial = new MeshStandardMaterial({ color: "#030305", roughness: 0.85, metalness: 0 });
   let lid = null;
+  let keyboard = null;
   // Display rect in the lid's local space (model units).
   const rect = { x0: -15, x1: 15, z0: -21, z1: -2, y: -0.44 };
 
@@ -638,6 +639,9 @@ export function createScene(container, { isMobile, reduced = false }) {
 
     // Lid on its hinge (slight overshoot comes from the timeline: lid > 1).
     lid.rotation.x = Math.PI - LID_OPEN * s.lid;
+    // Closed lid: hide the keyboard. The Touch ID sensor's polygon offset
+    // (and phones' coarser depth buffer) let it bleed through the lid.
+    if (keyboard) keyboard.visible = s.lid > 0.02;
     laptop.updateMatrixWorld(true);
 
     // Screen basis (world): normal out of the display, "up" along the lid.
@@ -777,7 +781,8 @@ export function createScene(container, { isMobile, reduced = false }) {
         }
       });
 
-      model.add(buildKeyboard(keysMaterial, wellMaterial, isMobile ? 512 : 1024));
+      keyboard = buildKeyboard(keysMaterial, wellMaterial, isMobile ? 512 : 1024);
+      model.add(keyboard);
       model.add(buildDeckDetails(Math.min(8, renderer.capabilities.getMaxAnisotropy())));
 
       // Apple logo on the back of the lid (a hand-drawn silhouette; the model
