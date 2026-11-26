@@ -320,6 +320,151 @@ function woodTexture(size, wood) {
   return texture;
 }
 
+/*
+ * Real walnut from the grey veneer scan. Multiplying the scan by one tint
+ * gives an even, cardboard-like brown, so instead:
+ *  - its tone (normalised by the scan's own mean / spread) goes through a
+ *    walnut ramp: chocolate in the grain, honey in the figure;
+ *  - a second, offset copy fades in and out over a slow noise, which breaks
+ *    up the visible tile repeat (the grain stays along x in both copies);
+ *  - broad noise warms / cools and lightens / darkens patches, like the
+ *    separate boards of a solid top.
+ * Patched into the material's map chunk, so the lightmap, fog etc. are kept.
+ */
+const WALNUT = {
+  dark: new Color("#1d0f08"),
+  mid: new Color("#5a3220"),
+  light: new Color("#a06a42"),
+  warm: new Color("#ffd2b0"),
+};
+
+const WOOD_NOISE_GLSL = /* glsl */ `
+  float woodHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float woodNoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(woodHash(i), woodHash(i + vec2(1.0, 0.0)), u.x), mix(woodHash(i + vec2(0.0, 1.0)), woodHash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+`;
+
+// Mean / spread of the scan's tone (sRGB 0–1), measured once per image.
+function toneStats(image) {
+  const size = 64;
+  const canvas = makeCanvas(size, size);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0, size, size);
+  const { data } = ctx.getImageData(0, 0, size, size);
+  let sum = 0;
+  let sq = 0;
+  const count = size * size;
+  for (let i = 0; i < data.length; i += 4) {
+    const l = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
+    sum += l;
+    sq += l * l;
+  }
+  const mean = sum / count;
+  return { mean, spread: Math.sqrt(Math.max(1e-6, sq / count - mean * mean)) };
+}
+
+/** Grade a material's (grey scan) map into walnut. `grain` = contrast. */
+function gradeWalnut(material, stats, { grain = 0.8, macro = 1 } = {}) {
+  material.color.set("#ffffff");
+  const uniforms = {
+    woodMean: { value: stats.mean },
+    woodSpread: { value: stats.spread },
+    woodGrain: { value: grain },
+    woodMacro: { value: macro },
+    woodDark: { value: WALNUT.dark },
+    woodMid: { value: WALNUT.mid },
+    woodLight: { value: WALNUT.light },
+    woodWarm: { value: WALNUT.warm },
+  };
+  material.userData.walnut = uniforms;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float woodMean, woodSpread, woodGrain, woodMacro;
+        uniform vec3 woodDark, woodMid, woodLight, woodWarm;
+        ${WOOD_NOISE_GLSL}`
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#ifdef USE_MAP
+          vec2 woodUv = vMapUv;
+          // anti-tiling: an offset copy (same grain direction) over slow noise
+          float woodSwap = smoothstep(0.42, 0.58, woodNoise(woodUv * vec2(0.35, 0.9) + 7.3));
+          vec3 woodA = texture2D(map, woodUv).rgb;
+          vec3 woodB = texture2D(map, woodUv * vec2(0.87, 1.13) + vec2(0.31, 0.57)).rgb;
+          float woodTone = dot(mix(woodA, woodB, woodSwap), vec3(0.299, 0.587, 0.114));
+          woodTone = pow(max(woodTone, 0.0), 1.0 / 2.2); // linear → perceptual
+          woodTone = clamp(0.5 + (woodTone - woodMean) / woodSpread * 0.2 * woodGrain, 0.0, 1.0);
+          vec3 woodCol = woodTone < 0.5
+            ? mix(woodDark, woodMid, woodTone * 2.0)
+            : mix(woodMid, woodLight, (woodTone - 0.5) * 2.0);
+          // board-scale variation: lighter / darker, warmer / cooler patches
+          float woodBoard = woodNoise(woodUv * vec2(0.22, 0.8) + 2.1);
+          float woodWarmth = woodNoise(woodUv * vec2(0.15, 0.45) + 11.7);
+          woodCol *= mix(1.0, mix(0.78, 1.18, woodBoard), woodMacro);
+          woodCol = mix(woodCol, woodCol * woodWarm * 1.15, (woodWarmth - 0.5) * 0.5 * woodMacro);
+          diffuseColor.rgb *= woodCol;
+        #endif`
+      );
+  };
+  material.customProgramCacheKey = () => "walnut";
+  material.needsUpdate = true;
+}
+
+// Varnish wear: where reflections are crisp (wiped, low roughness) vs dulled
+// (smudges, palm marks near the front, faint wipe arcs). Green = roughness.
+function varnishTexture(size) {
+  const canvas = makeCanvas(size, size);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "rgb(0,150,0)";
+  ctx.fillRect(0, 0, size, size);
+  // broad blotches
+  for (let i = 0; i < 70; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = size * (0.03 + rand() * 0.12);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const v = rand() > 0.5 ? 205 : 95;
+    g.addColorStop(0, `rgba(0,${v},0,${0.25 + rand() * 0.3})`);
+    g.addColorStop(1, `rgba(0,${v},0,0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // wipe arcs (a cloth's circular strokes)
+  ctx.lineCap = "round";
+  for (let i = 0; i < 26; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    ctx.strokeStyle = `rgba(0,${rand() > 0.5 ? 210 : 80},0,${0.06 + rand() * 0.08})`;
+    ctx.lineWidth = size * (0.004 + rand() * 0.012);
+    ctx.beginPath();
+    ctx.arc(x, y, size * (0.05 + rand() * 0.15), rand() * Math.PI * 2, rand() * Math.PI * 2 + 1.5);
+    ctx.stroke();
+  }
+  // fine micro-scratches along the grain
+  for (let i = 0; i < 160; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    ctx.strokeStyle = `rgba(0,220,0,${0.05 + rand() * 0.1})`;
+    ctx.lineWidth = 0.6 + rand();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + size * (0.02 + rand() * 0.08), y + (rand() - 0.5) * size * 0.01);
+    ctx.stroke();
+  }
+  softBlur(canvas, 1);
+  const texture = new CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = RepeatWrapping;
+  return texture;
+}
+
 /* ------------------------------------------------------------------ wall */
 
 function wallTexture(name, width) {
@@ -935,7 +1080,10 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
       new TextureLoader().load(
         url,
         (texture) => {
-          if (color) texture.colorSpace = SRGBColorSpace;
+          if (color) {
+            texture.colorSpace = SRGBColorSpace;
+            texture.userData.tone = toneStats(texture.image);
+          }
           texture.wrapS = texture.wrapT = RepeatWrapping;
           texture.repeat.set(4, 4); // one veneer sheet ≈ 6 units (≈ 60 cm)
           texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -1010,14 +1158,16 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   const lightFor = (name, size, centerZ) => (lightCache[name] ??= own(deskLight(name, size, centerZ)));
   // Where the varnish reflections show: around the work area, fading out.
   let mask = null;
+  let varnish = null;
   const sheenMask = () => {
     if (mask) return mask;
     const canvas = makeCanvas(128, 128);
     const ctx = canvas.getContext("2d");
-    const g = ctx.createRadialGradient(64, 68, 0, 64, 68, 50);
+    // wide: the whole visible top is varnished, just less so far away
+    const g = ctx.createRadialGradient(64, 68, 0, 64, 68, 64);
     g.addColorStop(0, "#fff");
-    g.addColorStop(0.5, "#bbb");
-    g.addColorStop(1, "#000");
+    g.addColorStop(0.55, "#d0d0d0");
+    g.addColorStop(1, "#202020");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
     mask = own(new CanvasTexture(canvas));
@@ -2064,7 +2214,15 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
   nose.translate(0, -0.06, edgeZ);
   const face = new PlaneGeometry(WALL_W, 0.34);
   face.translate(0, -0.06 - 0.17, edgeZ + 0.06);
-  const edge = new Mesh(mergeGeometries([nose.toNonIndexed(), face.toNonIndexed()], false), edgeMaterial);
+  const edgeGeo = mergeGeometries([nose.toNonIndexed(), face.toNonIndexed()], false);
+  {
+    // World-scale UVs matching the top's (24 units per uv), grain along x,
+    // so the veneer wraps over the lip at the same size.
+    const ep = edgeGeo.attributes.position;
+    const euv = edgeGeo.attributes.uv;
+    for (let i = 0; i < ep.count; i += 1) euv.setXY(i, (ep.getX(i) + WALL_W / 2) / 24, (ep.getZ(i) - ep.getY(i)) / 24);
+  }
+  const edge = new Mesh(edgeGeo, edgeMaterial);
   nose.dispose();
   face.dispose();
   group.add(edge);
@@ -2135,15 +2293,20 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
       // night: light adds up (a glow); day: painted over the light wall
       neon.material.blending = key === "dark" ? AdditiveBlending : NormalBlending;
       neon.material.needsUpdate = true;
-      deskMaterial.map = woodFor(key);
-      // Scanned wood veneer (Poly Haven, CC0): walnut at night, white oak by
-      // day; the drawn wood shows until it has loaded.
+      // Scanned walnut veneer (Poly Haven, CC0), graded in the shader (see
+      // gradeWalnut); the drawn wood shows until it has loaded.
+      if (!deskMaterial.userData.walnut) deskMaterial.map = woodFor(key);
       const wood = WOOD[key];
       scannedTex(wood.map, true).then((texture) => {
         if (themeKey !== key || !texture) return;
+        if (!deskMaterial.userData.walnut) gradeWalnut(deskMaterial, texture.userData.tone);
+        deskMaterial.color.set("#ffffff");
         deskMaterial.map = texture;
-        deskMaterial.color.set(wood.tint);
         deskMaterial.needsUpdate = true;
+        if (!edgeMaterial.userData.walnut) gradeWalnut(edgeMaterial, texture.userData.tone, { macro: 0.6 });
+        edgeMaterial.map = texture;
+        edgeMaterial.color.set("#ffffff");
+        edgeMaterial.needsUpdate = true;
         onChange?.();
       });
       if (sheenMaterial) {
@@ -2202,12 +2365,16 @@ export function createDeskSetup({ isMobile, reduced = false, renderer, onChange,
         sheenMaterial.bumpMap = woodFor(key);
         sheenMaterial.bumpScale = 2;
         sheenMaterial.alphaMap = sheenMask();
-        sheenMaterial.roughness = key === "dark" ? 0.36 : 0.42;
+        // smudges / wipes: roughness = map × this (the map averages ≈ 0.6)
+        varnish ??= own(varnishTexture(isMobile ? 256 : 512));
+        varnish.repeat.set(2, 2);
+        sheenMaterial.roughnessMap = varnish;
+        sheenMaterial.roughness = key === "dark" ? 0.55 : 0.68;
         sheenMaterial.envMapIntensity = key === "dark" ? 0.7 : 0.45;
         sheenMaterial.opacity = key === "dark" ? 0.55 : 0.3;
         sheenMaterial.needsUpdate = true;
       }
-      edgeMaterial.color.set(PALETTE[key].wood.base).multiplyScalar(0.7);
+      if (!edgeMaterial.userData.walnut) edgeMaterial.color.set(PALETTE[key].wood.base).multiplyScalar(0.7);
       shadows.material.opacity = PALETTE[key].shadow;
       steamMaterial.opacity = key === "dark" ? 0.26 : 0.4;
       tint(key);
