@@ -167,6 +167,80 @@
   color: var(--accent-2);
 }
 
+/*
+ * The always-moving parts (cycling word, bar shimmer) are CSS animations on
+ * transform: they run on the compositor, so they keep moving while the main
+ * thread is busy mounting the site / compiling the 3D scene. The static copy
+ * in public/preloader.css starts them at first paint; --pre-delay (set by
+ * Preloader.jsx) keeps the React copy in the same phase.
+ */
+.preloader__word {
+  transform: translateY(110%);
+  animation: preloader-word 5s var(--pre-delay, 0s) infinite;
+}
+
+.preloader__word:nth-child(2) {
+  animation-delay: calc(var(--pre-delay, 0s) + 1.25s);
+}
+
+.preloader__word:nth-child(3) {
+  animation-delay: calc(var(--pre-delay, 0s) + 2.5s);
+}
+
+.preloader__word:nth-child(4) {
+  animation-delay: calc(var(--pre-delay, 0s) + 3.75s);
+}
+
+.preloader__bar {
+  overflow: hidden;
+}
+
+.preloader__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgb(var(--ink) / 0.35), transparent);
+  transform: translateX(-100%);
+  animation: preloader-shimmer 1.6s var(--pre-delay, 0s) cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* One word's 1.25s turn of the 5s loop: rise in, hold, leave upwards. */
+@keyframes preloader-word {
+  0% {
+    transform: translateY(110%);
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  9% {
+    transform: translateY(0);
+  }
+  16% {
+    transform: translateY(0);
+    animation-timing-function: cubic-bezier(0.64, 0, 0.78, 0);
+  }
+  25%,
+  100% {
+    transform: translateY(-110%);
+  }
+}
+
+@keyframes preloader-shimmer {
+  to {
+    transform: translateX(440%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preloader__word,
+  .preloader__bar::after {
+    animation: none;
+  }
+
+  .preloader__word:first-child {
+    transform: none;
+  }
+}
+
 @media (max-width: 768px) {
   .preloader__meta {
     display: none;

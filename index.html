@@ -81,7 +81,14 @@
           <div class="preloader__top">
             <span class="preloader__brand">nk<sup>®</sup></span>
           </div>
-          <div class="preloader__center"></div>
+          <div class="preloader__center"
+            ><span class="preloader__mask"
+              ><span class="preloader__words"
+                ><span class="preloader__word">Think</span><span class="preloader__word">Design</span
+                ><span class="preloader__word">Build</span><span class="preloader__word">Ship</span></span
+              ></span
+            ></div
+          >
           <div class="preloader__bottom">
             <span class="preloader__bar"><span class="preloader__fill"></span></span>
             <span class="preloader__mask"
@@ -96,6 +103,10 @@
         </div>
       </div>
     </div>
+    <!-- When the static preloader's CSS loops started: React's copy continues in phase. -->
+    <script>
+      window.__preloaderT0 = performance.now();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

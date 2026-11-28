@@ -219,6 +219,7 @@ export default function Globe({ className = "", background = false, apiRef, onFi
     window.addEventListener("pointercancel", onUp);
     dragTarget.addEventListener("dblclick", onDblClick);
 
+    // Running: only while (nearly) on screen.
     const io = new IntersectionObserver(
       ([entry]) => {
         inView = entry.isIntersecting;
@@ -234,38 +235,54 @@ export default function Globe({ className = "", background = false, apiRef, onFi
     ro.observe(wrap);
     const offTheme = onThemeChange(applyTheme);
 
-    import("cobe")
-      .then(({ default: createGlobe }) => {
-        if (disposed) return;
-        size = Math.round(wrap.clientWidth) || 400;
-        globe = createGlobe(canvas, {
-          devicePixelRatio: 1, // width/height below are already in device px
-          width: size * dpr,
-          height: size * dpr,
-          phi: s.phi,
-          theta: s.theta,
-          mapSamples: isSmallScreen() ? 12000 : 20000,
-          markers: markers(),
-          arcs,
-          arcWidth: 0.6,
-          arcHeight: 0.28,
-          markerElevation: 0.02,
-          scale: 1,
-          ...(THEMES[getTheme()] ?? THEMES.dark),
+    // Created lazily, well before it scrolls into view: building the globe
+    // (map sampling + WebGL setup) costs ~1 s of main thread, which used to
+    // land in the middle of the page load although Contact is far below.
+    let created = false;
+    const create = () =>
+      import("cobe")
+        .then(({ default: createGlobe }) => {
+          if (disposed) return;
+          size = Math.round(wrap.clientWidth) || 400;
+          globe = createGlobe(canvas, {
+            devicePixelRatio: 1, // width/height below are already in device px
+            width: size * dpr,
+            height: size * dpr,
+            phi: s.phi,
+            theta: s.theta,
+            mapSamples: isSmallScreen() ? 12000 : 20000,
+            markers: markers(),
+            arcs,
+            arcWidth: 0.6,
+            arcHeight: 0.28,
+            markerElevation: 0.02,
+            scale: 1,
+            ...(THEMES[getTheme()] ?? THEMES.dark),
+          });
+          wrap.classList.add("is-ready");
+          render();
+          start();
+        })
+        .catch((error) => {
+          console.warn("[globe] disabled:", error);
+          wrap.classList.add("is-failed");
         });
-        wrap.classList.add("is-ready");
-        render();
-        start();
-      })
-      .catch((error) => {
-        console.warn("[globe] disabled:", error);
-        wrap.classList.add("is-failed");
-      });
+    const nearby = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting || created) return;
+        created = true;
+        nearby.disconnect();
+        create();
+      },
+      { rootMargin: "1200px 0px" }
+    );
+    nearby.observe(wrap);
 
     return () => {
       disposed = true;
       stop();
       io.disconnect();
+      nearby.disconnect();
       ro.disconnect();
       offTheme();
       document.removeEventListener("visibilitychange", onVisibility);

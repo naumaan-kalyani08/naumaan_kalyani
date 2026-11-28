@@ -8,7 +8,12 @@ import "../style/Preloader.css";
 
 const WORDS = ["Think", "Design", "Build", "Ship"];
 const MIN_DURATION = 1.4; // s — never flash
-const FAILSAFE = 4000; // ms — never get stuck
+// ms — never get stuck. Past this the counter runs out to 100 and the
+// curtain lifts whatever is still loading (each task below is capped too).
+const FAILSAFE = 10000;
+const SCENE_CAP = 8000; // ms — the 3D scene (chunk + model + shader compile)
+// Curtain lift: power4.inOut as a CSS curve (Web Animations, see exit()).
+const LIFT = { duration: 1150, easing: "cubic-bezier(0.86, 0, 0.07, 1)" };
 const CURVE_FLAT = "M0,0 L1000,0 L1000,0 Q500,0 0,0 Z";
 const CURVE_BULGE = "M0,0 L1000,0 L1000,0 Q500,160 0,0 Z";
 
@@ -53,11 +58,21 @@ const loadTasks = () =>
         : new Promise((resolve) => window.addEventListener("load", resolve, { once: true })),
       3000
     ),
-    introEnabled() && capped(whenIntroSceneReady(), 3500),
+    // The scene's shader compile blocks the main thread: let it finish behind
+    // the curtain rather than freeze the curtain halfway up.
+    introEnabled() && capped(whenIntroSceneReady(), SCENE_CAP),
   ].filter(Boolean);
+
+// The word / shimmer loops are CSS (compositor) animations, started by the
+// static copy in index.html at first paint: continue them in the same phase.
+const loopDelay = () => {
+  const t0 = typeof window !== "undefined" ? window.__preloaderT0 : undefined;
+  return `${-Math.max(0, performance.now() - (t0 ?? performance.now())).toFixed(0)}ms`;
+};
 
 export default function Preloader() {
   const [done, setDone] = useState(isAppReady);
+  const [delay] = useState(loopDelay);
   const rootRef = useRef(null);
 
   // Layout effect: initial animation states are applied before React's first
@@ -74,13 +89,14 @@ export default function Preloader() {
 
     const ctx = gsap.context(() => {}, root);
     let finished = false;
+    let complete = () => {}; // run the counter out to 100, then exit (set below)
 
-    const finish = () => {
+    const exit = () => {
       if (finished) return;
       finished = true;
 
       ctx.add(() => {
-        const exit = gsap.timeline({
+        const tl = gsap.timeline({
           onComplete: () => {
             html.classList.remove("is-locked");
             setDone(true);
@@ -88,17 +104,24 @@ export default function Preloader() {
         });
 
         if (prefersReducedMotion()) {
-          exit.add(setAppReady).to(root, { autoAlpha: 0, duration: 0.4 });
+          tl.add(setAppReady).to(root, { autoAlpha: 0, duration: 0.4 });
           return;
         }
 
-        exit
-          .to(".preloader__mask > *", { yPercent: -110, duration: 0.6, ease: "power3.in", stagger: 0.04 })
+        // The lift itself is a Web Animation (compositor): setAppReady() kicks
+        // off the hero / 3D intro, whose first frames can block the main
+        // thread — a GSAP tween would stall the curtain halfway up.
+        const panel = q(".preloader__panel");
+        const lift = () =>
+          panel.animate([{ transform: "translateY(0)" }, { transform: "translateY(-100%)" }], { ...LIFT, fill: "forwards" });
+
+        tl.to(".preloader__mask > *", { yPercent: -110, duration: 0.6, ease: "power3.in", stagger: 0.04 })
           .to(".preloader__bar", { scaleX: 0, transformOrigin: "100% 50%", duration: 0.5, ease: "power3.in" }, "<")
-          .add(setAppReady, "-=0.05") // hero intro starts while the curtain lifts
-          .to(".preloader__panel", { yPercent: -100, duration: 1.15, ease: "power4.inOut" }, "<")
+          .add(lift, "-=0.05")
+          .add(setAppReady, "<") // hero intro starts while the curtain lifts
           .to(".preloader__curve path", { attr: { d: CURVE_BULGE }, duration: 0.55, ease: "power2.in" }, "<")
-          .to(".preloader__curve path", { attr: { d: CURVE_FLAT }, duration: 0.6, ease: "power2.out" });
+          .to(".preloader__curve path", { attr: { d: CURVE_FLAT }, duration: 0.6, ease: "power2.out" })
+          .to({}, { duration: LIFT.duration / 1000 }, "<-0.55"); // the timeline ends with the lift
       });
     };
 
@@ -131,9 +154,15 @@ export default function Preloader() {
           onComplete: () => {
             if (target < 1) return;
             const elapsed = (performance.now() - start) / 1000;
-            gsap.delayedCall(Math.max(0, MIN_DURATION - elapsed), finish);
+            gsap.delayedCall(Math.max(0, MIN_DURATION - elapsed), exit);
           },
         });
+      };
+      // Failsafe: never cut away mid-count — roll on to 100%, then exit.
+      complete = () => {
+        if (finished || target >= 1) return;
+        target = 1;
+        advance();
       };
 
       tasks.forEach((task) =>
@@ -156,20 +185,10 @@ export default function Preloader() {
         gsap.delayedCall(0.45 + Math.random() * 0.3, trickle);
       };
       gsap.delayedCall(0.5, trickle);
-
-      // Cycling word in the centre.
-      const words = gsap.utils.toArray(".preloader__word");
-      gsap.set(words, { yPercent: 110 });
-      const cycle = gsap.timeline({ repeat: -1 });
-      words.forEach((word) => {
-        cycle
-          .to(word, { yPercent: 0, duration: 0.45, ease: "power3.out" })
-          .to(word, { yPercent: -110, duration: 0.45, ease: "power3.in" }, "+=0.35");
-      });
-
+      // (The cycling word is a CSS animation: see Preloader.css.)
     });
 
-    const failsafe = window.setTimeout(finish, FAILSAFE);
+    const failsafe = window.setTimeout(() => complete(), FAILSAFE);
 
     return () => {
       window.clearTimeout(failsafe);
@@ -181,7 +200,14 @@ export default function Preloader() {
   if (done) return null;
 
   return (
-    <div className="preloader" ref={rootRef} role="status" aria-live="polite" aria-label="Loading portfolio">
+    <div
+      className="preloader"
+      ref={rootRef}
+      role="status"
+      aria-live="polite"
+      aria-label="Loading portfolio"
+      style={{ "--pre-delay": delay }}
+    >
       <div className="preloader__panel">
         <div className="preloader__top">
           <span className="preloader__brand">

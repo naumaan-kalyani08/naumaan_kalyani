@@ -6,6 +6,7 @@ import {
   CanvasTexture,
   Color,
   DirectionalLight,
+  HalfFloatType,
   Fog,
   Group,
   HemisphereLight,
@@ -16,13 +17,16 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PMREMGenerator,
+  PerspectiveCamera,
   PlaneGeometry,
   PointLight,
   Quaternion,
+  Scene,
   Shape,
   ShapeGeometry,
   SRGBColorSpace,
   Vector3,
+  WebGLRenderTarget,
 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
@@ -459,6 +463,61 @@ function quadToMatrix3d(q, w, h) {
   return `matrix3d(${A},${D},0,${G},${B},${E},0,${H},0,0,1,0,${x0},${y0},0,1)`;
 }
 
+// Studio reflections: the same result as pmrem.fromScene(new RoomEnvironment(),
+// 0.04), without the ~2.5 s freeze. fromScene() links its six programs (the
+// room's materials + PMREM's blur / GGX filters) synchronously on first use;
+// here they're compiled in parallel first (compileAsync), so the build itself
+// only renders. The filter materials are private to PMREMGenerator: a probe
+// instance records them instead of rendering. If that internal API ever
+// changes, the probe is skipped and fromScene() simply compiles as before.
+async function createEnvironment(renderer, isCancelled) {
+  const room = new RoomEnvironment();
+  const pmrem = new PMREMGenerator(renderer);
+  const warm = new Scene();
+  const geometry = new BoxGeometry();
+  // Programs depend on the render target (linear output, no tone mapping):
+  // compile against one, as fromScene() renders into one.
+  const target = new WebGLRenderTarget(16, 16, { type: HalfFloatType });
+  const camera = new PerspectiveCamera(90, 1, 0.1, 100);
+  try {
+    const probe = new PMREMGenerator(renderer);
+    if (["_setSize", "_getSourceTarget", "_allocateTarget", "_blur", "_applyPMREM"].every((k) => typeof probe[k] === "function")) {
+      const filters = new Set();
+      probe._setSize(256);
+      probe._getSourceTarget(true);
+      const output = probe._allocateTarget();
+      probe._renderCube = (_target, _lod, material) => filters.add(material);
+      probe._blur(output, 0.04);
+      probe._applyPMREM(output);
+      filters.forEach((material) => warm.add(new Mesh(geometry, material)));
+      output.dispose();
+    }
+    probe.dispose();
+
+    const previous = renderer.getRenderTarget();
+    renderer.setRenderTarget(target);
+    let pending;
+    try {
+      pending = Promise.all([renderer.compileAsync(room, camera), renderer.compileAsync(warm, camera)]);
+    } finally {
+      renderer.setRenderTarget(previous);
+    }
+    await pending;
+  } catch {
+    // Fall through: fromScene() compiles whatever is missing itself.
+  }
+  target.dispose();
+  geometry.dispose();
+
+  const envTarget = isCancelled() ? null : pmrem.fromScene(room, 0.04);
+  room.traverse((obj) => {
+    obj.geometry?.dispose?.();
+    if (obj.material) [].concat(obj.material).forEach((m) => m.dispose());
+  });
+  pmrem.dispose();
+  return envTarget;
+}
+
 export function createScene(container, { isMobile, reduced = false }) {
   const base = createBase(container, { isMobile, fov: FOV, z: 6 });
   const { renderer, scene, camera } = base;
@@ -472,15 +531,14 @@ export function createScene(container, { isMobile, reduced = false }) {
   };
 
   // ---- Environment: soft studio reflections for the aluminium ----
-  const pmrem = new PMREMGenerator(renderer);
-  const room = new RoomEnvironment();
-  const envTarget = pmrem.fromScene(room, 0.04);
-  room.traverse((obj) => {
-    obj.geometry?.dispose?.();
-    if (obj.material) [].concat(obj.material).forEach((m) => m.dispose());
+  // Built asynchronously (see createEnvironment): no program is compiled and
+  // no frame is drawn until it's in, so nothing links without it first.
+  let disposed = false;
+  let envTarget = null;
+  const environment = createEnvironment(renderer, () => disposed).then((target) => {
+    envTarget = target;
+    if (target) scene.environment = target.texture;
   });
-  pmrem.dispose();
-  scene.environment = envTarget.texture;
 
   scene.background = new Color(THEMES.dark.bg);
   scene.fog = new Fog(THEMES.dark.bg, 5, 15);
@@ -516,7 +574,60 @@ export function createScene(container, { isMobile, reduced = false }) {
     scene.add(sheen);
   }
   let dirty = true; // see update(): unchanged frames are not re-rendered
-  const workspace = createDeskSetup({ isMobile, reduced, renderer, edgeZ: EDGE_Z, deskMesh: desk, onChange: () => (dirty = true) });
+  // Shader programs are compiled in parallel (compileAsync, i.e.
+  // KHR_parallel_shader_compile) before any frame may use them. A plain
+  // render() links new programs synchronously — on Windows (ANGLE → D3D)
+  // ~1–1.5 s each — which froze the whole page: the preloader, the curtain,
+  // scrolling. Materials change after load too (baked lightmaps, scanned
+  // wood, theme), so every change goes through here; frames wait meanwhile.
+  let compiling = null; // Promise while programs compile
+  let compileAgain = false;
+  const precompile = () => {
+    if (!envTarget) return environment.then(() => (disposed ? undefined : precompile()));
+    if (compiling) {
+      compileAgain = true;
+      return compiling;
+    }
+    // compile() only visits visible objects: include the hidden ones (lamp
+    // glow, steam, fallbacks…) so showing them later doesn't link a program
+    // synchronously. compileAsync() compiles up front, then only polls.
+    const hidden = [];
+    scene.traverse((obj) => {
+      if (!obj.visible) {
+        hidden.push(obj);
+        obj.visible = true;
+      }
+    });
+    let pending;
+    try {
+      pending = renderer.compileAsync(scene, camera);
+    } finally {
+      hidden.forEach((obj) => (obj.visible = false));
+    }
+    compiling = pending
+      .catch(() => {})
+      .then(() => {
+        compiling = null;
+        dirty = true;
+        if (compileAgain) {
+          compileAgain = false;
+          return precompile();
+        }
+        return undefined;
+      });
+    return compiling;
+  };
+  const workspace = createDeskSetup({
+    isMobile,
+    reduced,
+    renderer,
+    edgeZ: EDGE_Z,
+    deskMesh: desk,
+    onChange: () => {
+      dirty = true;
+      precompile();
+    },
+  });
   scene.add(workspace.group);
 
   // ---- Contact shadow (baked, two layers: soft spread + tight core) ----
@@ -710,6 +821,8 @@ export function createScene(container, { isMobile, reduced = false }) {
   const ready = new GLTFLoader()
     .setMeshoptDecoder(MeshoptDecoder)
     .loadAsync(modelUrl)
+    // (Disposed meanwhile → settle never: nothing left to set up.)
+    .then((gltf) => environment.then(() => (envTarget ? gltf : new Promise(() => {}))))
     .then((gltf) => {
       const model = gltf.scene;
       lid = model.getObjectByName("screen");
@@ -823,8 +936,8 @@ export function createScene(container, { isMobile, reduced = false }) {
       laptop.add(model);
       applyTheme();
       placeCamera();
-      renderer.compile(scene, camera);
-      renderer.render(scene, camera);
+      // `ready` (→ the preloader) resolves once the laptop's programs are built.
+      return precompile();
     });
 
   const applyTheme = () => {
@@ -834,6 +947,7 @@ export function createScene(container, { isMobile, reduced = false }) {
     desk.material.color.set(t.desk);
     workspace.applyTheme(t === THEMES.light ? "light" : "dark", desk.material, DESK, sheen?.material);
     dirty = true;
+    precompile();
     softShadow.material.opacity = t.shadow * 0.7;
     coreShadow.material.opacity = t.shadow;
     hemi.color.set(t.hemiSky);
@@ -932,6 +1046,7 @@ export function createScene(container, { isMobile, reduced = false }) {
   };
 
   const updateFrame = (time, dt) => {
+    if (compiling || !envTarget) return; // keep the last frame until the programs are ready
     if (!active || !lid) {
       if (!lid) renderer.render(scene, camera);
       return;
@@ -1018,7 +1133,8 @@ export function createScene(container, { isMobile, reduced = false }) {
       textures.forEach((texture) => texture.dispose());
       workspace.dispose();
       scene.traverse((obj) => obj.material?.map?.dispose?.()); // key legends
-      envTarget.dispose();
+      disposed = true;
+      envTarget?.dispose();
       shellMaterial?.normalMap?.dispose();
       base.dispose();
     },

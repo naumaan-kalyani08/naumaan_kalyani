@@ -10,6 +10,10 @@ export function createBase(container, { isMobile, fov = 45, z = 6 }) {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 2));
   renderer.setClearColor(0x000000, 0);
+  // Shader error checks fetch compile logs synchronously from the GPU process
+  // on each program's first use (100–300 ms apiece on Windows / ANGLE while
+  // other shaders compile). Keep them for development only.
+  renderer.debug.checkShaderErrors = import.meta.env.DEV;
 
   const canvas = renderer.domElement;
   canvas.setAttribute("aria-hidden", "true");

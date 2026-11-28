@@ -178,37 +178,50 @@ const roundRect = (ctx, x, y, w, h, r) => {
 // stitch inset from the border. Drawn at the mat's aspect (it maps once over
 // the top face; the colour is baked in, the material colour stays white).
 const LEATHER = { base: [27, 38, 88], stitch: "rgba(214, 196, 160, 0.9)" };
-function leatherTexture(width, height) {
-  const canvas = makeCanvas(width, height);
-  const ctx = canvas.getContext("2d");
+// Seamless pebble-grain tile (pattern-filled over the mat). Pebbles are
+// batched into one path per shade level and the per-pixel noise runs on the
+// small tile only: drawing ~100k ellipses one by one over the full mat took
+// seconds on the main thread (and reading a GPU canvas back stalls on Windows).
+function pebbleTile(size, k, rand) {
+  const tile = makeCanvas(size, size);
+  const ctx = tile.getContext("2d", { willReadFrequently: true }); // read back below
   const [r, g, b] = LEATHER.base;
-  const k = width / 2048; // detail scale
   ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-  ctx.fillRect(0, 0, width, height);
-
-  // Seeded random → the same grain on every load.
-  let seed = 7;
-  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.fillRect(0, 0, size, size);
 
   // Pebbles: small irregular cells, each a touch lighter or darker.
-  const count = Math.round((width * height) / (26 * k * k));
+  const LEVELS = 8;
+  const paths = Array.from({ length: LEVELS }, () => new Path2D());
+  const count = Math.round((size * size) / (26 * k * k));
+  const pebble = (path, x, y, rx, ry, rot) => {
+    path.moveTo(x + rx * Math.cos(rot), y + rx * Math.sin(rot));
+    path.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+  };
   for (let i = 0; i < count; i += 1) {
-    const x = rand() * width;
-    const y = rand() * height;
-    const shade = (rand() - 0.5) * 22;
-    ctx.fillStyle = `rgb(${r + shade}, ${g + shade}, ${b + shade * 1.3})`;
-    ctx.beginPath();
-    ctx.ellipse(x, y, (1.6 + rand() * 1.6) * k, (1.3 + rand() * 1.4) * k, rand() * Math.PI, 0, Math.PI * 2);
-    ctx.fill();
+    const x = rand() * size;
+    const y = rand() * size;
+    const path = paths[Math.floor(rand() * LEVELS)];
+    const rx = (1.6 + rand() * 1.6) * k;
+    const ry = (1.3 + rand() * 1.4) * k;
+    const rot = rand() * Math.PI;
+    // wrap across the edges so the tile repeats without seams
+    const m = 4 * k;
+    const xs = x < m ? [x, x + size] : x > size - m ? [x, x - size] : [x];
+    const ys = y < m ? [y, y + size] : y > size - m ? [y, y - size] : [y];
+    for (const px of xs) for (const py of ys) pebble(path, px, py, rx, ry, rot);
   }
+  paths.forEach((path, i) => {
+    const shade = (i / (LEVELS - 1) - 0.5) * 22;
+    ctx.fillStyle = `rgb(${r + shade}, ${g + shade}, ${b + shade * 1.3})`;
+    ctx.fill(path);
+  });
   // Creases between the pebbles: fine dark flecks.
   ctx.fillStyle = "rgba(6, 9, 26, 0.35)";
   for (let i = 0; i < count * 0.6; i += 1) {
-    ctx.fillRect(rand() * width, rand() * height, (0.8 + rand()) * k, (0.8 + rand()) * k);
+    ctx.fillRect(rand() * size, rand() * size, (0.8 + rand()) * k, (0.8 + rand()) * k);
   }
-
   // Per-pixel noise breaks up the regularity (and any banding).
-  const image = ctx.getImageData(0, 0, width, height);
+  const image = ctx.getImageData(0, 0, size, size);
   const px = image.data;
   for (let i = 0; i < px.length; i += 4) {
     const n = (rand() - 0.5) * 10;
@@ -217,6 +230,20 @@ function leatherTexture(width, height) {
     px[i + 2] += n;
   }
   ctx.putImageData(image, 0, 0);
+  return tile;
+}
+
+function leatherTexture(width, height) {
+  const canvas = makeCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+  const k = width / 2048; // detail scale
+
+  // Seeded random → the same grain on every load.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+  ctx.fillStyle = ctx.createPattern(pebbleTile(Math.round(256 * k), k, rand), "repeat");
+  ctx.fillRect(0, 0, width, height);
 
   // Soft, broad tonal variation (hide-like), then burnished darker edges.
   for (let i = 0; i < 14; i += 1) {
